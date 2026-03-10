@@ -21,7 +21,7 @@ export type Question = {
   explanation?: string;
 };
 
-export type PowerUpType = 'SCISSORS' | 'LIGHTNING' | 'FIREBALL' | 'TORNADO' | 'SHIELD' | 'FREEZE' | 'DOUBLE_POINTS' | 'THIEF' | 'TIME_WARP' | 'MIRROR' | 'BOMB' | 'CLUE' | 'REVEAL' | 'MAGNET' | 'SHUFFLE' | 'GHOST' | 'JACKPOT' | 'SLOW_MO' | 'COPYCAT';
+export type PowerUpType = 'SCISSORS' | 'LIGHTNING' | 'FIREBALL' | 'TORNADO' | 'SHIELD' | 'FREEZE' | 'DOUBLE_POINTS' | 'THIEF' | 'TIME_WARP' | 'MIRROR' | 'BOMB' | 'CLUE' | 'REVEAL' | 'MAGNET' | 'SHUFFLE' | 'BLACKOUT' | 'POISON' | 'VAMPIRE' | 'GRAVITY' | 'INVERT' | 'METEOR' | 'HAMMER';
 
 export type PowerUp = {
   id: string;
@@ -43,6 +43,7 @@ export type Player = {
   timeTaken?: number; // For QUICK mode
   powerUps: PowerUp[];
   activeEffects: ActiveEffect[];
+  correctCount: number;
 };
 
 export type GameState = 'LOBBY' | 'STARTING' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED' | 'QUICK_EXAM';

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle, Moon, Skull, Ghost, ArrowDownCircle, Contrast, CloudLightning, Hammer, Info, X } from 'lucide-react';
 import { GameState, MessageType, ChatMessage, PowerUp, PowerUpType, ActiveEffect } from '../types';
 import { clsx } from 'clsx';
+import { POWER_UPS_INFO } from '../constants/powerUps';
 
 interface PlayerViewProps {
   onBack: () => void;
@@ -34,6 +35,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
   const [quickSubmitted, setQuickSubmitted] = useState(false);
   const [quickTotalTime, setQuickTotalTime] = useState(0);
   const [showReview, setShowReview] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [powerUps, setPowerUps] = useState<PowerUp[]>([]);
@@ -43,6 +45,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
   const [showTargetList, setShowTargetList] = useState<string | null>(null);
   const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
   const [scissorsUsed, setScissorsUsed] = useState(false);
+  const [hammerUsed, setHammerUsed] = useState(false);
 
   const peerRef = useRef<Peer | null>(null);
   const quickTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -113,6 +116,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
         setAnswerResult(null);
         setShuffledOptions([...data.data.question.options]);
         setScissorsUsed(false);
+        setHammerUsed(false);
       }
       if (data.state === 'QUICK_EXAM') {
         setQuickQuestions(data.data.questions);
@@ -154,14 +158,9 @@ export function PlayerView({ onBack }: PlayerViewProps) {
     }
 
     if (data.type === 'GIVE_POWER_UP') {
-      if (gameState === 'QUESTION') {
-        // If in question phase, it might be from a THIEF, add directly
-        setPowerUps(prev => [...prev, data.powerUp]);
-      } else {
-        // From answering correctly, show lucky block
-        setPendingPowerUp(data.powerUp);
-        setShowLuckyBlock(true);
-      }
+      // Show lucky block for power-ups received (reward for correct answer or stolen)
+      setPendingPowerUp(data.powerUp);
+      setShowLuckyBlock(true);
     }
 
     if (data.type === 'APPLY_EFFECT') {
@@ -199,6 +198,8 @@ export function PlayerView({ onBack }: PlayerViewProps) {
       setSelectedAnswer(null);
       setPowerUps([]);
       setActiveEffects([]);
+      setScissorsUsed(false);
+      setHammerUsed(false);
     }
   };
 
@@ -262,6 +263,11 @@ export function PlayerView({ onBack }: PlayerViewProps) {
     setScissorsUsed(true);
   };
 
+  const useHammer = (powerUpId: string) => {
+    setPowerUps(prev => prev.filter(pu => pu.id !== powerUpId));
+    setHammerUsed(true);
+  };
+
   // Option colors for Kahoot-like feel
   const optionColors = [
     'bg-red-500 hover:bg-red-400',
@@ -278,6 +284,37 @@ export function PlayerView({ onBack }: PlayerViewProps) {
         </button>
         {connection && (
           <div className="flex items-center gap-4">
+            {/* Active Effects */}
+            <div className="flex gap-2 mr-2">
+              {activeEffects.map((effect, idx) => {
+                const timeLeft = Math.max(0, Math.ceil((effect.endTime - Date.now()) / 1000));
+                if (timeLeft === 0) return null;
+                return (
+                  <motion.div 
+                    key={idx}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg text-xs text-zinc-300 border border-white/10 shadow-lg"
+                  >
+                    {effect.type === 'SHIELD' && <Shield className="w-3.5 h-3.5 text-blue-400" />}
+                    {effect.type === 'FREEZE' && <Snowflake className="w-3.5 h-3.5 text-cyan-400" />}
+                    {effect.type === 'DOUBLE_POINTS' && <TrendingUp className="w-3.5 h-3.5 text-purple-400" />}
+                    {effect.type === 'LIGHTNING' && <Zap className="w-3.5 h-3.5 text-yellow-400" />}
+                    {effect.type === 'FIREBALL' && <Flame className="w-3.5 h-3.5 text-orange-400" />}
+                    {effect.type === 'TORNADO' && <Wind className="w-3.5 h-3.5 text-emerald-400" />}
+                    {effect.type === 'MIRROR' && <RefreshCw className="w-3.5 h-3.5 text-pink-400" />}
+                    {effect.type === 'CLUE' && <Lightbulb className="w-3.5 h-3.5 text-lime-400" />}
+                    {effect.type === 'MAGNET' && <Magnet className="w-3.5 h-3.5 text-slate-400" />}
+                    {effect.type === 'BLACKOUT' && <Moon className="w-3.5 h-3.5 text-zinc-600" />}
+                    {effect.type === 'POISON' && <Skull className="w-3.5 h-3.5 text-green-500" />}
+                    {effect.type === 'GRAVITY' && <ArrowDownCircle className="w-3.5 h-3.5 text-amber-700" />}
+                    {effect.type === 'INVERT' && <Contrast className="w-3.5 h-3.5 text-white" />}
+                    {effect.type === 'BOMB' && <Bomb className="w-3.5 h-3.5 text-red-500" />}
+                    <span className="font-mono font-bold">{timeLeft}s</span>
+                  </motion.div>
+                );
+              })}
+            </div>
             <div className="text-sm font-medium">{name}</div>
             <div className="bg-indigo-500/20 text-indigo-400 px-3 py-1 rounded-full text-sm font-bold">
               {myScore} pts
@@ -544,9 +581,9 @@ export function PlayerView({ onBack }: PlayerViewProps) {
             )}
 
             {gameState === 'QUESTION' && currentQuestion && !answerResult && (
-              <div className="w-full h-full flex flex-col max-w-5xl mx-auto relative">
+              <div className="w-full h-full flex flex-col max-w-5xl mx-auto relative pb-32 md:pb-8">
                 {settings?.chaosMode && (
-                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
+                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
                     <motion.div 
                       animate={{ scale: [1, 1.1, 1] }}
                       transition={{ repeat: Infinity, duration: 2 }}
@@ -554,105 +591,156 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                     >
                       <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
                     </motion.div>
+                    <button 
+                      onClick={() => setShowInfoModal(true)}
+                      className="bg-zinc-900/80 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white p-1.5 rounded-full transition-colors shadow-lg"
+                      title="Game Info"
+                    >
+                      <Info className="w-4 h-4" />
+                    </button>
                   </div>
                 )}
                 {/* Power-ups UI for Player */}
-                <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
-                  <AnimatePresence>
-                    {showLuckyBlock && (
-                      <motion.button
-                        initial={{ scale: 0, rotate: -180 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        exit={{ scale: 0, rotate: 180 }}
-                        onClick={openLuckyBlock}
-                        className="w-16 h-16 bg-yellow-500 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(234,179,8,0.5)] border-4 border-yellow-400 animate-bounce"
-                      >
-                        <Box className="w-8 h-8 text-white" />
-                      </motion.button>
-                    )}
-
-                    {powerUps.map((pu) => (
-                      <div key={pu.id} className="relative group">
-                        <motion.button
-                          initial={{ x: 50, opacity: 0 }}
-                          animate={{ x: 0, opacity: 1 }}
-                          className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all hover:scale-110"
-                        style={{ 
-                          backgroundColor: 
-                            pu.type === 'SCISSORS' ? '#4f46e5' : 
-                            pu.type === 'LIGHTNING' ? '#eab308' : 
-                            pu.type === 'FIREBALL' ? '#ef4444' : 
-                            pu.type === 'TORNADO' ? '#10b981' :
-                            pu.type === 'SHIELD' ? '#3b82f6' :
-                            pu.type === 'FREEZE' ? '#06b6d4' :
-                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : 
-                            pu.type === 'TIME_WARP' ? '#6366f1' :
-                            pu.type === 'MIRROR' ? '#ec4899' :
-                            pu.type === 'BOMB' ? '#18181b' :
-                            pu.type === 'CLUE' ? '#84cc16' :
-                            pu.type === 'REVEAL' ? '#f59e0b' :
-                            pu.type === 'MAGNET' ? '#64748b' :
-                            pu.type === 'SHUFFLE' ? '#7c3aed' : '#f97316',
-                          borderColor: 'rgba(255,255,255,0.2)'
-                        }}
-                        onClick={() => {
-                          if (pu.type === 'SCISSORS') {
-                            useScissors(pu.id);
-                          } else if (['SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'REVEAL', 'MAGNET', 'TIME_WARP'].includes(pu.type)) {
-                            usePowerUp(pu.id, peerRef.current?.id || '');
-                          } else {
-                            setShowTargetList(showTargetList === pu.id ? null : pu.id);
-                          }
-                        }}
-                      >
-                        {pu.type === 'SCISSORS' && <Scissors className="w-7 h-7 text-white" />}
-                        {pu.type === 'LIGHTNING' && <Zap className="w-7 h-7 text-white" />}
-                        {pu.type === 'FIREBALL' && <Flame className="w-7 h-7 text-white" />}
-                        {pu.type === 'TORNADO' && <Wind className="w-7 h-7 text-white" />}
-                        {pu.type === 'SHIELD' && <Shield className="w-7 h-7 text-white" />}
-                        {pu.type === 'FREEZE' && <Snowflake className="w-7 h-7 text-white" />}
-                        {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-7 h-7 text-white" />}
-                        {pu.type === 'THIEF' && <Hand className="w-7 h-7 text-white" />}
-                        {pu.type === 'TIME_WARP' && <RotateCcw className="w-7 h-7 text-white" />}
-                        {pu.type === 'MIRROR' && <RefreshCw className="w-7 h-7 text-white" />}
-                        {pu.type === 'BOMB' && <Bomb className="w-7 h-7 text-white" />}
-                        {pu.type === 'CLUE' && <Lightbulb className="w-7 h-7 text-white" />}
-                        {pu.type === 'REVEAL' && <Eye className="w-7 h-7 text-white" />}
-                        {pu.type === 'MAGNET' && <Magnet className="w-7 h-7 text-white" />}
-                        {pu.type === 'SHUFFLE' && <Shuffle className="w-7 h-7 text-white" />}
-                        </motion.button>
-
-                        {showTargetList === pu.id && (
-                          <motion.div 
-                            initial={{ opacity: 0, scale: 0.9, x: -10 }}
-                            animate={{ opacity: 1, scale: 1, x: 0 }}
-                            className="absolute right-16 bottom-0 bg-zinc-900 border border-white/10 rounded-xl p-2 shadow-2xl min-w-[150px]"
+                <div className="fixed bottom-6 left-0 right-0 z-50 px-4 pointer-events-none">
+                  <div className="max-w-md mx-auto flex items-center justify-center gap-3 pointer-events-auto">
+                    <AnimatePresence>
+                      {showLuckyBlock && (
+                        <motion.div
+                          initial={{ scale: 0, y: 100 }}
+                          animate={{ scale: 1, y: 0 }}
+                          exit={{ scale: 0, y: 100 }}
+                          className="relative"
+                        >
+                          <motion.button
+                            whileHover={{ scale: 1.1, rotate: 5 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={openLuckyBlock}
+                            className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-yellow-400 to-amber-600 rounded-2xl md:rounded-3xl flex items-center justify-center shadow-[0_0_30px_rgba(234,179,8,0.4)] border-4 border-yellow-300/50 relative group overflow-hidden"
                           >
-                            <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2 px-2 flex items-center gap-1">
-                              <Target className="w-3 h-3" /> Use on:
-                            </div>
-                            <div className="space-y-1">
-                              <button
-                                onClick={() => usePowerUp(pu.id, 'host')}
-                                className="w-full text-left px-3 py-1.5 rounded-lg text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-from)_0%,_transparent_70%)] opacity-50 group-hover:opacity-100 transition-opacity" />
+                            <Box className="w-8 h-8 md:w-10 md:h-10 text-white drop-shadow-lg relative z-10" />
+                            <motion.div 
+                              animate={{ opacity: [0, 1, 0], scale: [1, 1.2, 1] }}
+                              transition={{ repeat: Infinity, duration: 2 }}
+                              className="absolute inset-0 bg-white/20"
+                            />
+                          </motion.button>
+                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-yellow-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter shadow-lg whitespace-nowrap">
+                            Lucky Box!
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {powerUps.length > 0 && (
+                        <motion.div 
+                          initial={{ y: 100, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          className="bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-3xl p-2 flex flex-wrap justify-center items-center gap-2 shadow-2xl max-w-full"
+                        >
+                          {powerUps.map((pu) => (
+                            <div key={pu.id} className="relative">
+                              <motion.button
+                                whileHover={{ y: -5, scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                className="w-12 h-12 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg border border-white/10 transition-all relative group overflow-hidden"
+                                style={{ 
+                                  background: `linear-gradient(135deg, ${
+                                    pu.type === 'SCISSORS' ? '#4f46e5, #3730a3' : 
+                                    pu.type === 'LIGHTNING' ? '#eab308, #ca8a04' : 
+                                    pu.type === 'FIREBALL' ? '#ef4444, #b91c1c' : 
+                                    pu.type === 'TORNADO' ? '#10b981, #047857' :
+                                    pu.type === 'SHIELD' ? '#3b82f6, #1d4ed8' :
+                                    pu.type === 'FREEZE' ? '#06b6d4, #0e7490' :
+                                    pu.type === 'DOUBLE_POINTS' ? '#a855f7, #7e22ce' : 
+                                    pu.type === 'TIME_WARP' ? '#6366f1, #4338ca' :
+                                    pu.type === 'MIRROR' ? '#ec4899, #be185d' :
+                                    pu.type === 'BOMB' ? '#27272a, #09090b' :
+                                    pu.type === 'CLUE' ? '#84cc16, #4d7c0f' :
+                                    pu.type === 'REVEAL' ? '#f59e0b, #b45309' :
+                                    pu.type === 'MAGNET' ? '#64748b, #334155' :
+                                    pu.type === 'BLACKOUT' ? '#18181b, #000000' :
+                                    pu.type === 'POISON' ? '#166534, #064e3b' :
+                                    pu.type === 'VAMPIRE' ? '#991b1b, #450a0a' :
+                                    pu.type === 'GRAVITY' ? '#78350f, #451a03' :
+                                    pu.type === 'INVERT' ? '#ffffff, #d1d5db' :
+                                    pu.type === 'METEOR' ? '#f87171, #dc2626' :
+                                    pu.type === 'HAMMER' ? '#78716c, #44403c' :
+                                    pu.type === 'SHUFFLE' ? '#8b5cf6, #5b21b6' : '#f97316, #c2410c'
+                                  })`
+                                }}
+                                onClick={() => {
+                                  if (pu.type === 'SCISSORS') {
+                                    useScissors(pu.id);
+                                  } else if (pu.type === 'HAMMER') {
+                                    useHammer(pu.id);
+                                  } else if (['SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'REVEAL', 'MAGNET', 'TIME_WARP', 'INVERT', 'GRAVITY', 'BLACKOUT', 'POISON'].includes(pu.type)) {
+                                    usePowerUp(pu.id, peerRef.current?.id || '');
+                                  } else {
+                                    setShowTargetList(showTargetList === pu.id ? null : pu.id);
+                                  }
+                                }}
                               >
-                                <span className="truncate">Host</span>
-                              </button>
-                              {players.filter(p => p.id !== peerRef.current?.id).map(p => (
-                                <button
-                                  key={p.id}
-                                  onClick={() => usePowerUp(pu.id, p.id)}
-                                  className="w-full text-left px-3 py-1.5 rounded-lg text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                                <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                {pu.type === 'SCISSORS' && <Scissors className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'LIGHTNING' && <Zap className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'FIREBALL' && <Flame className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'TORNADO' && <Wind className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'SHIELD' && <Shield className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'FREEZE' && <Snowflake className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'THIEF' && <Hand className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'TIME_WARP' && <RotateCcw className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'MIRROR' && <RefreshCw className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'BOMB' && <Bomb className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'CLUE' && <Lightbulb className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'REVEAL' && <Eye className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'MAGNET' && <Magnet className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'SHUFFLE' && <Shuffle className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'BLACKOUT' && <Moon className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'POISON' && <Skull className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'VAMPIRE' && <Ghost className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'GRAVITY' && <ArrowDownCircle className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'INVERT' && <Contrast className="w-5 h-5 md:w-6 md:h-6 text-zinc-900" />}
+                                {pu.type === 'METEOR' && <CloudLightning className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                                {pu.type === 'HAMMER' && <Hammer className="w-5 h-5 md:w-6 md:h-6 text-white" />}
+                              </motion.button>
+
+                              {showTargetList === pu.id && (
+                                <motion.div 
+                                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-zinc-900 border border-white/10 rounded-2xl p-3 shadow-2xl min-w-[200px] z-50"
                                 >
-                                  <span className="truncate">{p.name}</span>
-                                </button>
-                              ))}
+                                  <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2 px-3 flex items-center gap-2">
+                                    <Target className="w-3 h-3 text-red-500" /> Select Target
+                                  </div>
+                                  <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
+                                    <button
+                                      onClick={() => usePowerUp(pu.id, 'host')}
+                                      className="w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                                    >
+                                      <span className="truncate font-medium text-indigo-400">Host</span>
+                                    </button>
+                                    {players.filter(p => p.id !== peerRef.current?.id).map(p => (
+                                      <button
+                                        key={p.id}
+                                        onClick={() => usePowerUp(pu.id, p.id)}
+                                        className="w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                                      >
+                                        <span className="truncate font-medium">{p.name}</span>
+                                        <span className="text-[10px] text-zinc-500 font-mono">{p.score}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <div className="absolute bottom-[-6px] left-1/2 -translate-x-1/2 w-3 h-3 bg-zinc-900 border-r border-b border-white/10 rotate-45" />
+                                </motion.div>
+                              )}
                             </div>
-                          </motion.div>
-                        )}
-                      </div>
-                    ))}
-                  </AnimatePresence>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
                 <div className="text-center mb-12">
@@ -660,6 +748,15 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                     Question {currentQuestionIndex + 1} of {totalQuestions}
                   </span>
                   <div className="relative">
+                    {/* Screen Shake Effect for Fireball/Meteor */}
+                    {(activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) || 
+                      activeEffects.some(e => e.type === 'METEOR' && e.endTime > Date.now())) && (
+                      <motion.div 
+                        animate={{ x: [-2, 2, -2, 2, 0], y: [-2, 2, 2, -2, 0] }}
+                        transition={{ repeat: Infinity, duration: 0.1 }}
+                        className="absolute inset-0 pointer-events-none z-0"
+                      />
+                    )}
                     {/* Lightning Effect */}
                     {activeEffects.some(e => e.type === 'LIGHTNING' && e.endTime > Date.now()) && (
                       <div className="absolute inset-0 bg-zinc-950 z-10 flex flex-col items-center justify-center text-yellow-400 animate-pulse rounded-2xl">
@@ -713,6 +810,36 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                       </div>
                     )}
 
+                    {/* Blackout Effect */}
+                    {activeEffects.some(e => e.type === 'BLACKOUT' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-40 pointer-events-none bg-black flex items-center justify-center">
+                        <Moon className="w-20 h-20 text-zinc-800 animate-pulse" />
+                      </div>
+                    )}
+
+                    {/* Invert Effect */}
+                    {activeEffects.some(e => e.type === 'INVERT' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-50 pointer-events-none backdrop-invert" />
+                    )}
+
+                    {/* Gravity Effect */}
+                    {activeEffects.some(e => e.type === 'GRAVITY' && e.endTime > Date.now()) && (
+                      <motion.div 
+                        animate={{ y: [0, 20, 0] }}
+                        transition={{ repeat: Infinity, duration: 0.5 }}
+                        className="absolute inset-0 z-10 pointer-events-none border-b-8 border-zinc-500/30"
+                      />
+                    )}
+
+                    {/* Poison Effect */}
+                    {activeEffects.some(e => e.type === 'POISON' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none bg-green-900/10">
+                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-green-500 animate-bounce">
+                          <Skull className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
                     {/* Bomb Effect */}
                     {activeEffects.some(e => e.type === 'BOMB' && e.endTime > Date.now()) && (
                       <div className="absolute inset-0 z-10 pointer-events-none bg-red-900/10 rounded-2xl">
@@ -733,25 +860,74 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                       </motion.div>
                     )}
 
-                    <h2 className="text-3xl md:text-5xl font-bold mb-4 leading-tight">{currentQuestion.text}</h2>
+                    <h2 className="text-2xl md:text-5xl font-bold mb-4 leading-tight">{currentQuestion.text}</h2>
                   </div>
                 </div>
                 
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 relative">
-                  {/* Fireball Effect */}
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6 relative">
+                  {/* Fireball Effect Reworked */}
                   {activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) && (
                     <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
-                      <div className="absolute inset-0 bg-orange-600/20 mix-blend-overlay" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-orange-600/40 via-transparent to-transparent mix-blend-overlay" />
+                      <AnimatePresence>
+                        {[...Array(10)].map((_, i) => (
+                          <motion.div
+                            key={i}
+                            initial={{ y: 400, x: Math.random() * 100 + '%', opacity: 0, scale: 0.5 }}
+                            animate={{ 
+                              y: -100, 
+                              x: (Math.random() * 100) + '%',
+                              opacity: [0, 1, 1, 0],
+                              scale: [0.5, 1.5, 1, 0.5],
+                              rotate: Math.random() * 360
+                            }}
+                            transition={{ 
+                              duration: 1.2 + Math.random(), 
+                              repeat: Infinity, 
+                              delay: i * 0.1,
+                              ease: "easeOut"
+                            }}
+                            className="absolute bottom-0 text-orange-500 blur-[1px]"
+                          >
+                            <Flame className="w-20 h-20" />
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                      <motion.div 
+                        animate={{ opacity: [0.1, 0.3, 0.1] }}
+                        transition={{ repeat: Infinity, duration: 0.5 }}
+                        className="absolute inset-0 bg-orange-500/10"
+                      />
+                    </div>
+                  )}
+
+                  {/* Tornado Effect Reworked */}
+                  {activeEffects.some(e => e.type === 'TORNADO' && e.endTime > Date.now()) && (
+                    <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
+                      <motion.div 
+                        animate={{ rotate: 360 }}
+                        transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                        className="absolute inset-[-50%] border-[30px] border-dashed border-emerald-500/10 rounded-full blur-2xl"
+                      />
                       {[...Array(6)].map((_, i) => (
                         <motion.div
                           key={i}
-                          initial={{ y: 300, opacity: 0 }}
-                          animate={{ y: -300, opacity: [0, 1, 0] }}
-                          transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.3 }}
-                          className="absolute bottom-0 text-orange-500"
-                          style={{ left: `${i * 20}%` }}
+                          animate={{ 
+                            rotate: 360,
+                            scale: [1, 1.2, 1],
+                            x: [0, 15, -15, 0],
+                            y: [0, -15, 15, 0]
+                          }}
+                          transition={{ 
+                            rotate: { repeat: Infinity, duration: 3, ease: "linear", delay: i * 0.5 },
+                            scale: { repeat: Infinity, duration: 2 },
+                            x: { repeat: Infinity, duration: 4 },
+                            y: { repeat: Infinity, duration: 5 }
+                          }}
+                          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-emerald-400/20"
+                          style={{ width: `${(i + 1) * 20}%`, height: `${(i + 1) * 20}%` }}
                         >
-                          <Flame className="w-16 h-16" />
+                          <Wind className="w-full h-full" />
                         </motion.div>
                       ))}
                     </div>
@@ -782,8 +958,9 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                     const isWrong = opt !== currentQuestion.correctAnswer;
                     const wrongOptions = currentQuestion.options.filter((o: string) => o !== currentQuestion.correctAnswer);
                     const hiddenByScissors = scissorsUsed && isWrong && wrongOptions.indexOf(opt) < 2;
+                    const hiddenByHammer = hammerUsed && isWrong && wrongOptions.indexOf(opt) === 0;
 
-                    if (hiddenByScissors && !answerResult) return <div key={i} className="min-h-[120px]" />;
+                    if ((hiddenByScissors || hiddenByHammer) && !answerResult) return <div key={i} className="min-h-[120px]" />;
 
                     return (
                       <button
@@ -791,13 +968,13 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                         onClick={() => submitAnswer(opt)}
                         disabled={isDisabled}
                         className={clsx(
-                          "relative p-6 md:p-8 rounded-3xl text-xl md:text-2xl font-bold transition-all flex items-center gap-6 min-h-[120px] md:min-h-[160px] group",
+                          "relative p-5 md:p-8 rounded-2xl md:rounded-3xl text-lg md:text-2xl font-bold transition-all flex items-center gap-4 md:gap-6 min-h-[100px] md:min-h-[160px] group",
                           isSelected ? selectedColors[i % 4] : colors[i % 4],
                           isDisabled && !isSelected ? "opacity-40 grayscale-[0.5]" : "",
                           !isDisabled && "active:translate-y-[6px] active:shadow-none"
                         )}
                       >
-                        <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-white/20 flex items-center justify-center text-2xl md:text-3xl flex-shrink-0">
+                        <div className="w-10 h-10 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-white/20 flex items-center justify-center text-xl md:text-3xl flex-shrink-0">
                           {labels[i]}
                         </div>
                         <span className="text-left leading-tight drop-shadow-md">{opt}</span>
@@ -820,64 +997,102 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 className={clsx(
-                  "w-full max-w-md rounded-3xl p-8 text-center",
+                  "w-full max-w-md rounded-[2.5rem] p-6 md:p-10 text-center shadow-2xl",
                   (settings?.showCorrectAnswer || !answerResult.correct) ? (answerResult.correct ? "bg-emerald-500 text-white" : "bg-red-500 text-white") : "bg-indigo-600 text-white"
                 )}
               >
                 {settings?.showCorrectAnswer ? (
                   <>
                     {answerResult.correct ? (
-                      <CheckCircle2 className="w-24 h-24 mx-auto mb-6" />
+                      <CheckCircle2 className="w-16 h-16 md:w-24 md:h-24 mx-auto mb-6 drop-shadow-lg" />
                     ) : (
-                      <XCircle className="w-24 h-24 mx-auto mb-6" />
+                      <XCircle className="w-16 h-16 md:w-24 md:h-24 mx-auto mb-6 drop-shadow-lg" />
                     )}
                     
-                    <h2 className="text-4xl font-bold mb-2">
+                    <h2 className="text-3xl md:text-5xl font-black mb-2 uppercase tracking-tight">
                       {answerResult.correct ? "Correct!" : "Incorrect"}
                     </h2>
                     
-                    <div className="text-xl opacity-90 mb-8">
+                    <div className="text-xl md:text-2xl font-bold opacity-90 mb-8">
                       {answerResult.correct ? `+${answerResult.score} points` : "0 points"}
                     </div>
                     
                     {!answerResult.correct && (
-                      <div className="bg-black/20 rounded-xl p-4 mb-4">
-                        <div className="text-sm uppercase tracking-wider opacity-80 mb-1">Correct Answer</div>
-                        <div className="font-bold text-lg">{answerResult.correctAnswer}</div>
+                      <div className="bg-black/20 backdrop-blur-sm rounded-2xl p-5 mb-6 border border-white/10">
+                        <div className="text-[10px] uppercase tracking-[0.2em] font-black opacity-60 mb-2">Correct Answer</div>
+                        <div className="font-bold text-xl">{answerResult.correctAnswer}</div>
                       </div>
                     )}
 
                     {answerResult.explanation && (
-                      <div className="bg-white/10 rounded-xl p-4 text-sm italic">
+                      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 text-sm italic leading-relaxed border border-white/5">
                         {answerResult.explanation}
                       </div>
                     )}
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="w-24 h-24 mx-auto mb-6 opacity-50" />
-                    <h2 className="text-4xl font-bold mb-4">Answer Received</h2>
-                    <p className="text-xl opacity-80">Waiting for the host to reveal results...</p>
+                    <CheckCircle2 className="w-16 h-16 md:w-24 md:h-24 mx-auto mb-6 opacity-50" />
+                    <h2 className="text-3xl md:text-4xl font-bold mb-4">Answer Received</h2>
+                    <p className="text-lg opacity-80">Waiting for the host to reveal results...</p>
                   </>
                 )}
               </motion.div>
             )}
 
             {gameState === 'LEADERBOARD' && (
-              <div className="text-center">
-                <h2 className="text-3xl font-bold mb-8">Current Standings</h2>
-                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 inline-block min-w-[300px]">
-                  <div className="text-sm text-zinc-400 uppercase tracking-widest mb-2">Your Score</div>
-                  <div className="text-5xl font-bold text-indigo-400 mb-4">{myScore}</div>
-                  
-                  <div className="text-zinc-400 flex items-center justify-center gap-2">
-                    <Trophy className="w-5 h-5" />
-                    Rank: #{leaderboard.findIndex(p => p.id === peerRef.current?.id) + 1} of {leaderboard.length}
+              <div className="w-full max-w-2xl mx-auto">
+                <div className="text-center mb-10">
+                  <h2 className="text-3xl font-bold mb-4">Current Standings</h2>
+                  <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 inline-block min-w-[300px] shadow-xl">
+                    <div className="text-sm text-zinc-400 uppercase tracking-widest mb-2">Your Score</div>
+                    <div className="text-5xl font-bold text-indigo-400 mb-4">{myScore}</div>
+                    
+                    <div className="text-zinc-400 flex items-center justify-center gap-2">
+                      <Trophy className="w-5 h-5" />
+                      Rank: #{leaderboard.findIndex(p => p.id === peerRef.current?.id) + 1} of {leaderboard.length}
+                    </div>
                   </div>
+                </div>
+
+                <div className="space-y-3 mb-10 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                  {leaderboard.map((p, i) => (
+                    <motion.div
+                      key={p.id}
+                      initial={{ x: -10, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: i * 0.05 }}
+                      className={clsx(
+                        "bg-zinc-900/50 border border-white/5 rounded-xl p-4 flex items-center justify-between",
+                        p.id === peerRef.current?.id && "border-indigo-500/50 bg-indigo-500/5"
+                      )}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={clsx(
+                          "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm",
+                          i === 0 ? "bg-yellow-500/20 text-yellow-400" :
+                          i === 1 ? "bg-zinc-300/20 text-zinc-300" :
+                          i === 2 ? "bg-amber-700/20 text-amber-600" :
+                          "bg-zinc-800 text-zinc-500"
+                        )}>
+                          {i + 1}
+                        </div>
+                        <span className="font-bold truncate max-w-[150px]">{p.name}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="font-mono text-indigo-400 leading-none">{p.score}</div>
+                          <div className="text-[8px] text-zinc-500 font-bold uppercase tracking-tighter mt-1">
+                            {p.correctCount || 0} Correct
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
                 </div>
                 
                 {quickQuestions.length > 0 && (
-                  <div className="mt-8">
+                  <div className="text-center">
                     <button
                       onClick={() => setShowReview(true)}
                       className="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-3 rounded-xl font-medium transition-colors"
@@ -890,20 +1105,59 @@ export function PlayerView({ onBack }: PlayerViewProps) {
             )}
 
             {gameState === 'FINISHED' && (
-              <div className="text-center">
-                <h2 className="text-4xl font-bold mb-8">Final Results</h2>
-                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-8 inline-block min-w-[300px]">
-                  <div className="text-sm text-zinc-400 uppercase tracking-widest mb-2">Final Score</div>
-                  <div className="text-6xl font-bold text-indigo-400 mb-6">{myScore}</div>
-                  
-                  <div className="text-xl font-medium flex items-center justify-center gap-2">
-                    <Trophy className="w-6 h-6 text-yellow-400" />
-                    Final Rank: #{leaderboard.findIndex(p => p.id === peerRef.current?.id) + 1}
+              <div className="w-full max-w-2xl mx-auto">
+                <div className="text-center mb-10">
+                  <Trophy className="w-20 h-20 text-yellow-400 mx-auto mb-6" />
+                  <h2 className="text-4xl font-bold mb-4">Final Results</h2>
+                  <div className="bg-zinc-900 border border-white/10 rounded-2xl p-8 inline-block min-w-[300px] shadow-2xl">
+                    <div className="text-sm text-zinc-400 uppercase tracking-widest mb-2">Final Score</div>
+                    <div className="text-6xl font-bold text-indigo-400 mb-6">{myScore}</div>
+                    
+                    <div className="text-xl font-medium flex items-center justify-center gap-2">
+                      <Trophy className="w-6 h-6 text-yellow-400" />
+                      Final Rank: #{leaderboard.findIndex(p => p.id === peerRef.current?.id) + 1}
+                    </div>
                   </div>
+                </div>
+
+                <div className="space-y-3 mb-10 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                  {leaderboard.map((p, i) => (
+                    <motion.div
+                      key={p.id}
+                      initial={{ x: -10, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: i * 0.05 }}
+                      className={clsx(
+                        "bg-zinc-900/50 border border-white/5 rounded-xl p-4 flex items-center justify-between",
+                        p.id === peerRef.current?.id && "border-indigo-500/50 bg-indigo-500/5"
+                      )}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={clsx(
+                          "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm",
+                          i === 0 ? "bg-yellow-500/20 text-yellow-400" :
+                          i === 1 ? "bg-zinc-300/20 text-zinc-300" :
+                          i === 2 ? "bg-amber-700/20 text-amber-600" :
+                          "bg-zinc-800 text-zinc-500"
+                        )}>
+                          {i + 1}
+                        </div>
+                        <span className="font-bold truncate max-w-[150px]">{p.name}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="font-mono text-indigo-400 leading-none">{p.score}</div>
+                          <div className="text-[8px] text-zinc-500 font-bold uppercase tracking-tighter mt-1">
+                            {p.correctCount || 0} Correct
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
                 </div>
                 
                 {quickQuestions.length > 0 && (
-                  <div className="mt-8">
+                  <div className="text-center">
                     <button
                       onClick={() => setShowReview(true)}
                       className="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-3 rounded-xl font-medium transition-colors"
@@ -1002,6 +1256,100 @@ export function PlayerView({ onBack }: PlayerViewProps) {
           </div>
         </div>
       )}
+
+      {/* Info Modal */}
+      <AnimatePresence>
+        {showInfoModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowInfoModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-4xl max-h-[90vh] bg-zinc-900 border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-8 border-b border-white/5 flex items-center justify-between bg-zinc-900/50 backdrop-blur-md sticky top-0 z-10">
+                <div>
+                  <h2 className="text-3xl font-bold flex items-center gap-3">
+                    <Info className="w-8 h-8 text-indigo-500" /> Game Guide
+                  </h2>
+                  <p className="text-zinc-500 text-sm mt-1">Learn about Chaos Mode and Power-ups</p>
+                </div>
+                <button 
+                  onClick={() => setShowInfoModal(false)}
+                  className="p-2 hover:bg-white/5 rounded-full transition-colors text-zinc-400 hover:text-white"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                <section className="mb-12">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-orange-500/20 rounded-xl">
+                      <Flame className="w-6 h-6 text-orange-500" />
+                    </div>
+                    <h3 className="text-xl font-bold text-orange-400 uppercase tracking-wider">Chaos Mode</h3>
+                  </div>
+                  <div className="bg-white/5 border border-white/5 rounded-3xl p-6">
+                    <p className="text-zinc-300 leading-relaxed">
+                      Chaos Mode is an unpredictable game variant where players earn <span className="text-yellow-500 font-bold">Lucky Boxes</span> by answering questions correctly. 
+                      These boxes contain powerful items that can be used to boost your own performance or sabotage your opponents. 
+                      Strategic use of power-ups is the key to victory!
+                    </p>
+                  </div>
+                </section>
+
+                <section>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-indigo-500/20 rounded-xl">
+                      <Box className="w-6 h-6 text-indigo-500" />
+                    </div>
+                    <h3 className="text-xl font-bold text-indigo-400 uppercase tracking-wider">Power-ups Library</h3>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {POWER_UPS_INFO.map((info) => (
+                      <div 
+                        key={info.type}
+                        className="flex items-start gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-colors group"
+                      >
+                        <div 
+                          className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg"
+                          style={{ 
+                            background: `linear-gradient(135deg, ${info.color}, ${info.color}88)`
+                          }}
+                        >
+                          {React.cloneElement(info.icon as React.ReactElement, { className: "w-6 h-6 text-white" })}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-white group-hover:text-indigo-400 transition-colors">{info.name}</h4>
+                          <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{info.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              <div className="p-6 bg-zinc-950/50 border-t border-white/5 text-center">
+                <button 
+                  onClick={() => setShowInfoModal(false)}
+                  className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg"
+                >
+                  Got it!
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
-}
+};
