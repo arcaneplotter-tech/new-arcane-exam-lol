@@ -66,4 +66,5 @@ export type MessageType =
   | { type: 'CHAT_MESSAGE'; message: ChatMessage }
   | { type: 'GIVE_POWER_UP'; powerUp: PowerUp }
   | { type: 'USE_POWER_UP'; powerUpId: string; targetId: string }
-  | { type: 'APPLY_EFFECT'; effect: PowerUpType };
+  | { type: 'APPLY_EFFECT'; effect: PowerUpType }
+  | { type: 'NEW_ROUND' };

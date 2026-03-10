@@ -576,6 +576,11 @@ export function HostView({ onBack }: HostViewProps) {
     }, 1000);
   };
 
+  const startNewRound = () => {
+    setGameState('LOBBY');
+    broadcast({ type: 'NEW_ROUND' });
+  };
+
   const startQuickExam = () => {
     setGameState('QUICK_EXAM');
     
@@ -1994,6 +1999,12 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
             </div>
 
             <div className="flex justify-center gap-4">
+              <button
+                onClick={startNewRound}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-medium transition-colors"
+              >
+                Start New Round
+              </button>
               {settings.examType === 'QUICK' && (
                 <button
                   onClick={() => setShowReview(true)}

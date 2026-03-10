@@ -186,6 +186,20 @@ export function PlayerView({ onBack }: PlayerViewProps) {
       });
       setMyScore(prev => prev + data.score);
     }
+
+    if (data.type === 'NEW_ROUND') {
+      setGameState('LOBBY');
+      setQuickQuestions([]);
+      setQuickAnswers({});
+      setQuickCurrentIndex(0);
+      setQuickTimeLeft(0);
+      setQuickSubmitted(false);
+      setShowReview(false);
+      setAnswerResult(null);
+      setSelectedAnswer(null);
+      setPowerUps([]);
+      setActiveEffects([]);
+    }
   };
 
   const submitAnswer = (answer: string) => {
