@@ -206,8 +206,8 @@ export function HostView({ onBack }: HostViewProps) {
               setPlayers(prev => prev.map(pl => pl.id === conn.peer ? { ...pl, activeEffects: pl.activeEffects.filter(e => e.type !== 'CLUE') } : pl));
             }
             
-            // 30% chance to get a lucky block on correct answer in NORMAL mode (only if chaosMode is on)
-            if (settingsRef.current.examType === 'NORMAL' && settingsRef.current.chaosMode && Math.random() < 0.3) {
+            // 100% chance to get a lucky block on correct answer
+            if (true) {
               const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF', 'TIME_WARP', 'MIRROR', 'BOMB', 'CLUE', 'REVEAL', 'MAGNET', 'SHUFFLE'];
               const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
               const powerUp: PowerUp = { id: Math.random().toString(36).substr(2, 9), type };
