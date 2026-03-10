@@ -20,6 +20,18 @@ export type Question = {
   explanation?: string;
 };
 
+export type PowerUpType = 'SCISSORS' | 'LIGHTNING' | 'FIREBALL' | 'TORNADO' | 'SHIELD' | 'FREEZE' | 'DOUBLE_POINTS' | 'THIEF';
+
+export type PowerUp = {
+  id: string;
+  type: PowerUpType;
+};
+
+export type ActiveEffect = {
+  type: PowerUpType;
+  endTime: number;
+};
+
 export type Player = {
   id: string;
   name: string;
@@ -28,6 +40,8 @@ export type Player = {
   currentAnswer: string | null;
   connection: any; // DataConnection
   timeTaken?: number; // For QUICK mode
+  powerUps: PowerUp[];
+  activeEffects: ActiveEffect[];
 };
 
 export type GameState = 'LOBBY' | 'STARTING' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED' | 'QUICK_EXAM';
@@ -48,4 +62,7 @@ export type MessageType =
   | { type: 'SUBMIT_EXAM'; answers: Record<string, string>; timeTaken: number }
   | { type: 'ANSWER_RESULT'; correct: boolean; score: number; correctAnswer: string; explanation?: string }
   | { type: 'PLAYER_LIST'; players: { id: string; name: string; score: number; timeTaken?: number }[] }
-  | { type: 'CHAT_MESSAGE'; message: ChatMessage };
+  | { type: 'CHAT_MESSAGE'; message: ChatMessage }
+  | { type: 'GIVE_POWER_UP'; powerUp: PowerUp }
+  | { type: 'USE_POWER_UP'; powerUpId: string; targetId: string }
+  | { type: 'APPLY_EFFECT'; effect: PowerUpType };

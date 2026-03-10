@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Users, Play, ArrowLeft, Trophy, CheckCircle2, XCircle, Loader2, Copy, Check, Timer, ChevronDown, ChevronUp, Settings, MessageSquare, Send } from 'lucide-react';
+import { Upload, Users, Play, ArrowLeft, Trophy, CheckCircle2, XCircle, Loader2, Copy, Check, Timer, ChevronDown, ChevronUp, Settings, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand } from 'lucide-react';
 import Papa from 'papaparse';
-import { Question, Player, GameState, MessageType, GameSettings, ChatMessage } from '../types';
+import { Question, Player, GameState, MessageType, GameSettings, ChatMessage, PowerUp, PowerUpType } from '../types';
 import { clsx } from 'clsx';
 
 interface HostViewProps {
@@ -40,6 +40,12 @@ export function HostView({ onBack }: HostViewProps) {
   const [showReview, setShowReview] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [promptCopied, setPromptCopied] = useState(false);
+  const [showLuckyBlock, setShowLuckyBlock] = useState(false);
+  const [pendingPowerUp, setPendingPowerUp] = useState<PowerUp | null>(null);
+  const [showTargetList, setShowTargetList] = useState<string | null>(null); // powerUpId
+  const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
+  const [scissorsUsed, setScissorsUsed] = useState(false);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const playersRef = useRef<Player[]>([]);
@@ -115,7 +121,9 @@ export function HostView({ onBack }: HostViewProps) {
         score: 0,
         hasAnswered: false,
         currentAnswer: null,
-        connection: conn
+        connection: conn,
+        powerUps: [],
+        activeEffects: []
       };
       
       setPlayers(prev => {
@@ -180,7 +188,24 @@ export function HostView({ onBack }: HostViewProps) {
           let points = 0;
           
           if (isCorrect) {
+            const hasDoublePoints = p.activeEffects.some(e => e.type === 'DOUBLE_POINTS' && e.endTime > Date.now());
             points = Math.round(1000 * (timeLeftRef.current / q.timeLimit) * settingsRef.current.pointMultiplier);
+            if (hasDoublePoints) {
+              points *= 2;
+              // Remove effect
+              setPlayers(prev => prev.map(pl => pl.id === conn.peer ? { ...pl, activeEffects: pl.activeEffects.filter(e => e.type !== 'DOUBLE_POINTS') } : pl));
+            }
+            
+            // 30% chance to get a lucky block on correct answer in NORMAL mode
+            if (settingsRef.current.examType === 'NORMAL' && Math.random() < 0.3) {
+              const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF'];
+              const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+              const powerUp: PowerUp = { id: Math.random().toString(36).substr(2, 9), type };
+              
+              if (conn.open) {
+                conn.send({ type: 'GIVE_POWER_UP', powerUp });
+              }
+            }
           } else {
             points = -settingsRef.current.penaltyPoints;
           }
@@ -234,6 +259,74 @@ export function HostView({ onBack }: HostViewProps) {
       setMessages(prev => [...prev, data.message]);
       broadcast(data);
     }
+
+    if (data.type === 'USE_POWER_UP') {
+      const { powerUpId, targetId } = data;
+      const player = playersRef.current.find(p => p.id === conn.peer);
+      if (player) {
+        const powerUp = player.powerUps.find(pu => pu.id === powerUpId);
+        if (powerUp) {
+          // Remove power-up from player
+          setPlayers(prev => prev.map(p => p.id === conn.peer ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
+          
+          if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS') {
+            // Self-applied
+            setPlayers(prev => prev.map(p => p.id === conn.peer ? { 
+              ...p, 
+              activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + (powerUp.type === 'FREEZE' ? 5000 : 30000) }] 
+            } : p));
+            if (conn.open) {
+              conn.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
+            }
+          } else {
+            // Offensive power-ups (LIGHTNING, FIREBALL, TORNADO, THIEF)
+            const target = playersRef.current.find(p => p.id === targetId);
+            if (target) {
+              const hasShield = target.activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now());
+              if (hasShield) {
+                // Remove shield and don't apply effect
+                setPlayers(prev => prev.map(p => p.id === targetId ? { 
+                  ...p, 
+                  activeEffects: p.activeEffects.filter(e => e.type !== 'SHIELD') 
+                } : p));
+                
+                // Notify both
+                const msg = `Shield blocked ${powerUp.type}!`;
+                if (conn.open) conn.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
+                if (targetId !== 'host' && target.connection && target.connection.open) {
+                  target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
+                }
+                return;
+              }
+
+              if (powerUp.type === 'THIEF') {
+                if (target.powerUps.length > 0) {
+                  const randomIndex = Math.floor(Math.random() * target.powerUps.length);
+                  const stolenPowerUp = target.powerUps[randomIndex];
+                  setPlayers(prev => prev.map(p => p.id === targetId ? { ...p, powerUps: p.powerUps.filter((_, i) => i !== randomIndex) } : p));
+                  setPlayers(prev => prev.map(p => p.id === conn.peer ? { ...p, powerUps: [...p.powerUps, stolenPowerUp] } : p));
+                  if (conn.open) conn.send({ type: 'GIVE_POWER_UP', powerUp: stolenPowerUp });
+                  
+                  const notifyMsg = `Your ${stolenPowerUp.type} was stolen by ${player.name}!`;
+                  if (targetId === 'host') {
+                    setMessages(prev => [...prev, { senderId: 'system', senderName: 'System', text: notifyMsg, timestamp: Date.now() }]);
+                  } else if (target.connection && target.connection.open) {
+                    target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: notifyMsg, timestamp: Date.now() }});
+                  }
+                }
+              } else if (targetId === 'host') {
+                setPlayers(prev => prev.map(p => p.id === 'host' ? { 
+                  ...p, 
+                  activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + 5000 }] 
+                } : p));
+              } else if (target.connection && target.connection.open) {
+                target.connection.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
+              }
+            }
+          }
+        }
+      }
+    }
   };
 
   const SAMPLE_CSV = `ID;Question;Options(separated by |);Answer;Explanation
@@ -272,6 +365,16 @@ export function HostView({ onBack }: HostViewProps) {
     });
   };
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPlayers(prev => prev.map(p => ({
+        ...p,
+        activeEffects: p.activeEffects.filter(e => e.endTime > Date.now())
+      })));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -302,7 +405,9 @@ export function HostView({ onBack }: HostViewProps) {
       score: 0,
       hasAnswered: false,
       currentAnswer: null,
-      connection: null as any
+      connection: null as any,
+      powerUps: [],
+      activeEffects: []
     };
     setPlayers(prev => [...prev, newPlayer]);
   };
@@ -455,6 +560,9 @@ export function HostView({ onBack }: HostViewProps) {
     if (timerRef.current) clearInterval(timerRef.current);
     
     timerRef.current = setInterval(() => {
+      const anyFreeze = playersRef.current.some(p => p.activeEffects.some(e => e.type === 'FREEZE' && e.endTime > Date.now()));
+      if (anyFreeze) return;
+      
       setTimeLeft(prev => {
         if (prev <= 1) {
           if (timerRef.current) clearInterval(timerRef.current);
@@ -464,6 +572,10 @@ export function HostView({ onBack }: HostViewProps) {
         return prev - 1;
       });
     }, 1000);
+
+    // Initial shuffle for tornado effect if needed
+    setShuffledOptions([...q.options]);
+    setScissorsUsed(false);
   };
 
   // Check if all players answered
@@ -482,6 +594,7 @@ export function HostView({ onBack }: HostViewProps) {
 
   const handleQuestionEnd = () => {
     setShowAnswer(true);
+    setScissorsUsed(false);
     const q = questionsRef.current[currentQuestionIndexRef.current];
     
     // Send result to players who didn't answer
@@ -543,6 +656,102 @@ export function HostView({ onBack }: HostViewProps) {
     setMessages(prev => [...prev, newMessage]);
     broadcast({ type: 'CHAT_MESSAGE', message: newMessage });
     setChatInput('');
+  };
+
+  const usePowerUp = (powerUpId: string, targetId: string) => {
+    const host = players.find(p => p.id === 'host');
+    if (!host) return;
+    const powerUp = host.powerUps.find(pu => pu.id === powerUpId);
+    if (!powerUp) return;
+
+    // Remove from host
+    setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
+
+    // Apply effect
+    if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS') {
+      // Self-applied
+      setPlayers(prev => prev.map(p => p.id === 'host' ? { 
+        ...p, 
+        activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + (powerUp.type === 'FREEZE' ? 5000 : 30000) }] 
+      } : p));
+    } else {
+      // Offensive power-ups (LIGHTNING, FIREBALL, TORNADO, THIEF)
+      const target = players.find(p => p.id === targetId);
+      if (target) {
+        const hasShield = target.activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now());
+        if (hasShield) {
+          // Remove shield and don't apply effect
+          setPlayers(prev => prev.map(p => p.id === targetId ? { 
+            ...p, 
+            activeEffects: p.activeEffects.filter(e => e.type !== 'SHIELD') 
+          } : p));
+          
+          // Notify both
+          const msg = `Shield blocked ${powerUp.type}!`;
+          if (targetId !== 'host' && target.connection && target.connection.open) {
+            target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
+          }
+          return;
+        }
+
+        if (powerUp.type === 'THIEF') {
+          if (target.powerUps.length > 0) {
+            const randomIndex = Math.floor(Math.random() * target.powerUps.length);
+            const stolenPowerUp = target.powerUps[randomIndex];
+            setPlayers(prev => prev.map(p => p.id === targetId ? { ...p, powerUps: p.powerUps.filter((_, i) => i !== randomIndex) } : p));
+            setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: [...p.powerUps, stolenPowerUp] } : p));
+            if (targetId !== 'host' && target.connection && target.connection.open) {
+              target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: `Your ${stolenPowerUp.type} was stolen by the Host!`, timestamp: Date.now() }});
+            }
+          }
+        } else if (targetId === 'host') {
+          setPlayers(prev => prev.map(p => p.id === 'host' ? { 
+            ...p, 
+            activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + 5000 }] 
+          } : p));
+        } else if (target.connection && target.connection.open) {
+          target.connection.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
+        }
+      }
+    }
+    setShowTargetList(null);
+  };
+
+  const useScissors = (powerUpId: string) => {
+    const host = players.find(p => p.id === 'host');
+    if (!host) return;
+    const powerUp = host.powerUps.find(pu => pu.id === powerUpId && pu.type === 'SCISSORS');
+    if (!powerUp) return;
+
+    setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
+    setScissorsUsed(true);
+  };
+
+  const openLuckyBlock = () => {
+    if (pendingPowerUp) {
+      setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: [...p.powerUps, pendingPowerUp] } : p));
+      setPendingPowerUp(null);
+      setShowLuckyBlock(false);
+    }
+  };
+
+  const copyAIPrompt = () => {
+    const prompt = `Please generate a quiz in CSV format for my exam platform. 
+The format MUST follow these rules:
+1. Use a semicolon (;) as the delimiter.
+2. The columns must be: ID;Question;Options(separated by |);Answer;Explanation
+3. The 'Options' column must contain 4 choices separated by a pipe (|).
+4. The 'Answer' must exactly match one of the options.
+5. Provide a brief explanation for the correct answer.
+
+Example row:
+1;What is the capital of France?;Paris|London|Berlin|Madrid;Paris;Paris is the capital and most populous city of France.
+
+Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
+    
+    navigator.clipboard.writeText(prompt);
+    setPromptCopied(true);
+    setTimeout(() => setPromptCopied(false), 2000);
   };
 
   return (
@@ -609,6 +818,22 @@ export function HostView({ onBack }: HostViewProps) {
                       Load Sample
                     </button>
                   </div>
+                  <button 
+                    onClick={copyAIPrompt}
+                    className="w-full mt-2 flex items-center justify-center gap-2 bg-zinc-800/50 border border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-800 px-4 py-3 rounded-xl font-medium transition-all"
+                  >
+                    {promptCopied ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        Prompt Copied!
+                      </>
+                    ) : (
+                      <>
+                        <MessageSquare className="w-4 h-4" />
+                        Copy AI Prompt Template
+                      </>
+                    )}
+                  </button>
                 </div>
                 {questions.length > 0 && (
                   <div className="mt-4 text-emerald-400 flex items-center justify-center gap-2 bg-emerald-500/10 py-2 rounded-lg">
@@ -922,19 +1147,136 @@ export function HostView({ onBack }: HostViewProps) {
 
         {gameState === 'QUESTION' && questions[currentQuestionIndex] && (
           <div className="w-full max-w-6xl flex flex-col items-center">
+            {/* Power-ups UI for Host */}
+            {players.find(p => p.id === 'host') && (
+              <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
+                <AnimatePresence>
+                  {showLuckyBlock && (
+                    <motion.button
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      exit={{ scale: 0, rotate: 180 }}
+                      onClick={openLuckyBlock}
+                      className="w-16 h-16 bg-yellow-500 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(234,179,8,0.5)] border-4 border-yellow-400 animate-bounce"
+                    >
+                      <Box className="w-8 h-8 text-white" />
+                    </motion.button>
+                  )}
+
+                  {players.find(p => p.id === 'host')?.powerUps.map((pu) => (
+                    <div key={pu.id} className="relative group">
+                      <motion.button
+                        initial={{ x: 50, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all hover:scale-110"
+                        style={{ 
+                          backgroundColor: 
+                            pu.type === 'SCISSORS' ? '#4f46e5' : 
+                            pu.type === 'LIGHTNING' ? '#eab308' : 
+                            pu.type === 'FIREBALL' ? '#ef4444' : 
+                            pu.type === 'TORNADO' ? '#10b981' :
+                            pu.type === 'SHIELD' ? '#3b82f6' :
+                            pu.type === 'FREEZE' ? '#06b6d4' :
+                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : '#f97316',
+                          borderColor: 'rgba(255,255,255,0.2)'
+                        }}
+                        onClick={() => {
+                          if (pu.type === 'SCISSORS') {
+                            useScissors(pu.id);
+                          } else if (pu.type === 'SHIELD' || pu.type === 'FREEZE' || pu.type === 'DOUBLE_POINTS') {
+                            usePowerUp(pu.id, 'host');
+                          } else {
+                            setShowTargetList(showTargetList === pu.id ? null : pu.id);
+                          }
+                        }}
+                      >
+                        {pu.type === 'SCISSORS' && <Scissors className="w-7 h-7 text-white" />}
+                        {pu.type === 'LIGHTNING' && <Zap className="w-7 h-7 text-white" />}
+                        {pu.type === 'FIREBALL' && <Flame className="w-7 h-7 text-white" />}
+                        {pu.type === 'TORNADO' && <Wind className="w-7 h-7 text-white" />}
+                        {pu.type === 'SHIELD' && <Shield className="w-7 h-7 text-white" />}
+                        {pu.type === 'FREEZE' && <Snowflake className="w-7 h-7 text-white" />}
+                        {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-7 h-7 text-white" />}
+                        {pu.type === 'THIEF' && <Hand className="w-7 h-7 text-white" />}
+                      </motion.button>
+
+                      {showTargetList === pu.id && (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.9, x: -10 }}
+                          animate={{ opacity: 1, scale: 1, x: 0 }}
+                          className="absolute right-16 bottom-0 bg-zinc-900 border border-white/10 rounded-xl p-2 shadow-2xl min-w-[150px]"
+                        >
+                          <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2 px-2 flex items-center gap-1">
+                            <Target className="w-3 h-3" /> Use on:
+                          </div>
+                          <div className="space-y-1">
+                            {players.map(p => (
+                              <button
+                                key={p.id}
+                                onClick={() => usePowerUp(pu.id, p.id)}
+                                className="w-full text-left px-3 py-1.5 rounded-lg text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                              >
+                                <span className="truncate">{p.name}</span>
+                                {p.id === 'host' && <span className="text-[8px] opacity-50 ml-1">You</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+
             <div className="w-full flex items-center justify-between mb-8">
               <span className="inline-block px-5 py-2 rounded-full bg-white/10 text-white/70 font-medium tracking-widest uppercase">
                 Question {currentQuestionIndex + 1} of {questions.length}
               </span>
               <div className={clsx(
-                "w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold border-4 shadow-xl",
+                "w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold border-4 shadow-xl relative",
                 timeLeft <= 5 ? "border-red-500 text-red-500 bg-red-500/10 animate-pulse" : "border-indigo-500 text-indigo-400 bg-indigo-500/10"
               )}>
                 {timeLeft}
+                {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'DOUBLE_POINTS' && e.endTime > Date.now()) && (
+                  <motion.div 
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute -top-2 -right-2 bg-purple-600 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1"
+                  >
+                    <TrendingUp className="w-3 h-3" /> 2X
+                  </motion.div>
+                )}
               </div>
             </div>
 
             <div className="w-full bg-zinc-900 border border-white/10 rounded-[3rem] p-10 md:p-16 shadow-2xl mb-8 relative overflow-hidden">
+              {/* Lightning Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'LIGHTNING' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 bg-zinc-950 z-10 flex flex-col items-center justify-center text-yellow-400 animate-pulse">
+                  <Zap className="w-20 h-20 mb-4" />
+                  <h3 className="text-2xl font-bold uppercase tracking-widest">Blinded by Lightning!</h3>
+                </div>
+              )}
+
+              {/* Freeze Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'FREEZE' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 bg-cyan-500/10 z-10 pointer-events-none border-4 border-cyan-400/30 rounded-[3rem] backdrop-blur-[1px]">
+                  <div className="absolute top-4 right-4 text-cyan-400 animate-pulse">
+                    <Snowflake className="w-10 h-10" />
+                  </div>
+                </div>
+              )}
+
+              {/* Shield Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 z-10 pointer-events-none border-4 border-blue-500/50 rounded-[3rem] shadow-[inset_0_0_50px_rgba(59,130,246,0.2)]">
+                  <div className="absolute top-4 left-4 text-blue-400">
+                    <Shield className="w-8 h-8" />
+                  </div>
+                </div>
+              )}
+
               <div className="absolute top-0 left-0 w-full h-2 bg-white/5">
                 <motion.div 
                   className="h-full bg-indigo-500"
@@ -961,15 +1303,44 @@ export function HostView({ onBack }: HostViewProps) {
               </motion.div>
             )}
 
-            <div className="w-full grid md:grid-cols-2 gap-6 mb-12">
-              {questions[currentQuestionIndex].options.map((opt, i) => {
-                const isCorrect = showAnswer && opt === questions[currentQuestionIndex].correctAnswer;
-                const isWrong = showAnswer && !isCorrect;
+            <div className="w-full grid md:grid-cols-2 gap-6 mb-12 relative">
+              {/* Fireball Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
+                  <div className="absolute inset-0 bg-orange-600/20 mix-blend-overlay" />
+                  {[...Array(10)].map((_, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ y: 500, opacity: 0 }}
+                      animate={{ y: -500, opacity: [0, 1, 0] }}
+                      transition={{ duration: 2, repeat: Infinity, delay: i * 0.2 }}
+                      className="absolute bottom-0 text-orange-500"
+                      style={{ left: `${i * 10}%` }}
+                    >
+                      <Flame className="w-20 h-20" />
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+
+              {(players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'TORNADO' && e.endTime > Date.now()) 
+                ? shuffledOptions 
+                : questions[currentQuestionIndex].options
+              ).map((opt, i) => {
+                const q = questions[currentQuestionIndex];
+                const isCorrect = showAnswer && opt === q.correctAnswer;
                 
                 const hostPlayer = players.find(p => p.id === 'host');
                 const isHostPlayer = !!hostPlayer;
                 const hostHasAnswered = hostPlayer?.hasAnswered;
                 const isHostSelected = hostPlayer?.currentAnswer === opt;
+
+                // Scissors effect: hide 2 wrong answers
+                const isWrong = opt !== q.correctAnswer;
+                const wrongOptions = q.options.filter(o => o !== q.correctAnswer);
+                const hiddenByScissors = scissorsUsed && isWrong && wrongOptions.indexOf(opt) < 2;
+
+                if (hiddenByScissors && !showAnswer) return <div key={i} className="min-h-[140px]" />;
                 
                 const labels = ['A', 'B', 'C', 'D'];
                 const colors = [
@@ -990,11 +1361,26 @@ export function HostView({ onBack }: HostViewProps) {
                   
                   const q = questions[currentQuestionIndex];
                   const isCorrect = opt === q.correctAnswer;
-                  const points = isCorrect ? Math.round(1000 * (timeLeftRef.current / q.timeLimit)) : 0;
+                  const hasDoublePoints = hostPlayer?.activeEffects.some(e => e.type === 'DOUBLE_POINTS' && e.endTime > Date.now());
+                  let points = isCorrect ? Math.round(1000 * (timeLeftRef.current / q.timeLimit)) : 0;
+                  if (isCorrect && hasDoublePoints) {
+                    points *= 2;
+                  }
 
                   setPlayers(prev => prev.map(p => {
                     if (p.id === 'host') {
-                      return { ...p, hasAnswered: true, currentAnswer: opt, score: p.score + points };
+                      // Chance for lucky block for host
+                      if (isCorrect && settingsRef.current.examType === 'NORMAL' && Math.random() < 0.3) {
+                        const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF'];
+                        const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+                        const powerUp: PowerUp = { id: Math.random().toString(36).substr(2, 9), type };
+                        setPendingPowerUp(powerUp);
+                        setShowLuckyBlock(true);
+                      }
+                      const newActiveEffects = isCorrect && hasDoublePoints 
+                        ? p.activeEffects.filter(e => e.type !== 'DOUBLE_POINTS')
+                        : p.activeEffects;
+                      return { ...p, hasAnswered: true, currentAnswer: opt, score: p.score + points, activeEffects: newActiveEffects };
                     }
                     return p;
                   }));

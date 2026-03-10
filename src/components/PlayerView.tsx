@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send } from 'lucide-react';
-import { GameState, MessageType, ChatMessage } from '../types';
+import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand } from 'lucide-react';
+import { GameState, MessageType, ChatMessage, PowerUp, PowerUpType, ActiveEffect } from '../types';
 import { clsx } from 'clsx';
 
 interface PlayerViewProps {
@@ -22,6 +22,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [answerResult, setAnswerResult] = useState<{ correct: boolean; score: number; correctAnswer: string; explanation?: string } | null>(null);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [players, setPlayers] = useState<any[]>([]);
   const [myScore, setMyScore] = useState(0);
   const [settings, setSettings] = useState<any>(null);
 
@@ -35,6 +36,13 @@ export function PlayerView({ onBack }: PlayerViewProps) {
   const [showReview, setShowReview] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [powerUps, setPowerUps] = useState<PowerUp[]>([]);
+  const [activeEffects, setActiveEffects] = useState<ActiveEffect[]>([]);
+  const [showLuckyBlock, setShowLuckyBlock] = useState(false);
+  const [pendingPowerUp, setPendingPowerUp] = useState<PowerUp | null>(null);
+  const [showTargetList, setShowTargetList] = useState<string | null>(null);
+  const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
+  const [scissorsUsed, setScissorsUsed] = useState(false);
 
   const peerRef = useRef<Peer | null>(null);
   const quickTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -47,6 +55,13 @@ export function PlayerView({ onBack }: PlayerViewProps) {
       peer.destroy();
       if (quickTimerRef.current) clearInterval(quickTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveEffects(prev => prev.filter(e => e.endTime > Date.now()));
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const joinGame = (e: React.FormEvent) => {
@@ -96,6 +111,8 @@ export function PlayerView({ onBack }: PlayerViewProps) {
         setTotalQuestions(data.data.totalQuestions || 0);
         setSelectedAnswer(null);
         setAnswerResult(null);
+        setShuffledOptions([...data.data.question.options]);
+        setScissorsUsed(false);
       }
       if (data.state === 'QUICK_EXAM') {
         setQuickQuestions(data.data.questions);
@@ -134,6 +151,26 @@ export function PlayerView({ onBack }: PlayerViewProps) {
 
     if (data.type === 'CHAT_MESSAGE') {
       setMessages(prev => [...prev, data.message]);
+    }
+
+    if (data.type === 'GIVE_POWER_UP') {
+      if (gameState === 'QUESTION') {
+        // If in question phase, it might be from a THIEF, add directly
+        setPowerUps(prev => [...prev, data.powerUp]);
+      } else {
+        // From answering correctly, show lucky block
+        setPendingPowerUp(data.powerUp);
+        setShowLuckyBlock(true);
+      }
+    }
+
+    if (data.type === 'APPLY_EFFECT') {
+      const duration = (data.effect === 'FREEZE' ? 5000 : (data.effect === 'SHIELD' || data.effect === 'DOUBLE_POINTS') ? 30000 : 5000);
+      setActiveEffects(prev => [...prev, { type: data.effect, endTime: Date.now() + duration }]);
+    }
+
+    if (data.type === 'PLAYER_LIST') {
+      setPlayers(data.players);
     }
 
     if (data.type === 'ANSWER_RESULT') {
@@ -185,6 +222,26 @@ export function PlayerView({ onBack }: PlayerViewProps) {
     // Let's just send it to the host. The host will broadcast it to everyone including us.
     connection.send({ type: 'CHAT_MESSAGE', message: newMessage });
     setChatInput('');
+  };
+
+  const openLuckyBlock = () => {
+    if (pendingPowerUp) {
+      setPowerUps(prev => [...prev, pendingPowerUp]);
+      setPendingPowerUp(null);
+      setShowLuckyBlock(false);
+    }
+  };
+
+  const usePowerUp = (powerUpId: string, targetId: string) => {
+    if (!connection) return;
+    connection.send({ type: 'USE_POWER_UP', powerUpId, targetId });
+    setPowerUps(prev => prev.filter(pu => pu.id !== powerUpId));
+    setShowTargetList(null);
+  };
+
+  const useScissors = (powerUpId: string) => {
+    setPowerUps(prev => prev.filter(pu => pu.id !== powerUpId));
+    setScissorsUsed(true);
   };
 
   // Option colors for Kahoot-like feel
@@ -469,16 +526,162 @@ export function PlayerView({ onBack }: PlayerViewProps) {
             )}
 
             {gameState === 'QUESTION' && currentQuestion && !answerResult && (
-              <div className="w-full h-full flex flex-col max-w-5xl mx-auto">
+              <div className="w-full h-full flex flex-col max-w-5xl mx-auto relative">
+                {/* Power-ups UI for Player */}
+                <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
+                  <AnimatePresence>
+                    {showLuckyBlock && (
+                      <motion.button
+                        initial={{ scale: 0, rotate: -180 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        exit={{ scale: 0, rotate: 180 }}
+                        onClick={openLuckyBlock}
+                        className="w-16 h-16 bg-yellow-500 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(234,179,8,0.5)] border-4 border-yellow-400 animate-bounce"
+                      >
+                        <Box className="w-8 h-8 text-white" />
+                      </motion.button>
+                    )}
+
+                    {powerUps.map((pu) => (
+                      <div key={pu.id} className="relative group">
+                        <motion.button
+                          initial={{ x: 50, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all hover:scale-110"
+                        style={{ 
+                          backgroundColor: 
+                            pu.type === 'SCISSORS' ? '#4f46e5' : 
+                            pu.type === 'LIGHTNING' ? '#eab308' : 
+                            pu.type === 'FIREBALL' ? '#ef4444' : 
+                            pu.type === 'TORNADO' ? '#10b981' :
+                            pu.type === 'SHIELD' ? '#3b82f6' :
+                            pu.type === 'FREEZE' ? '#06b6d4' :
+                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : '#f97316',
+                          borderColor: 'rgba(255,255,255,0.2)'
+                        }}
+                        onClick={() => {
+                          if (pu.type === 'SCISSORS') {
+                            useScissors(pu.id);
+                          } else if (pu.type === 'SHIELD' || pu.type === 'FREEZE' || pu.type === 'DOUBLE_POINTS') {
+                            usePowerUp(pu.id, peerRef.current?.id || '');
+                          } else {
+                            setShowTargetList(showTargetList === pu.id ? null : pu.id);
+                          }
+                        }}
+                      >
+                        {pu.type === 'SCISSORS' && <Scissors className="w-7 h-7 text-white" />}
+                        {pu.type === 'LIGHTNING' && <Zap className="w-7 h-7 text-white" />}
+                        {pu.type === 'FIREBALL' && <Flame className="w-7 h-7 text-white" />}
+                        {pu.type === 'TORNADO' && <Wind className="w-7 h-7 text-white" />}
+                        {pu.type === 'SHIELD' && <Shield className="w-7 h-7 text-white" />}
+                        {pu.type === 'FREEZE' && <Snowflake className="w-7 h-7 text-white" />}
+                        {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-7 h-7 text-white" />}
+                        {pu.type === 'THIEF' && <Hand className="w-7 h-7 text-white" />}
+                        </motion.button>
+
+                        {showTargetList === pu.id && (
+                          <motion.div 
+                            initial={{ opacity: 0, scale: 0.9, x: -10 }}
+                            animate={{ opacity: 1, scale: 1, x: 0 }}
+                            className="absolute right-16 bottom-0 bg-zinc-900 border border-white/10 rounded-xl p-2 shadow-2xl min-w-[150px]"
+                          >
+                            <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2 px-2 flex items-center gap-1">
+                              <Target className="w-3 h-3" /> Use on:
+                            </div>
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => usePowerUp(pu.id, 'host')}
+                                className="w-full text-left px-3 py-1.5 rounded-lg text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                              >
+                                <span className="truncate">Host</span>
+                              </button>
+                              {players.filter(p => p.id !== peerRef.current?.id).map(p => (
+                                <button
+                                  key={p.id}
+                                  onClick={() => usePowerUp(pu.id, p.id)}
+                                  className="w-full text-left px-3 py-1.5 rounded-lg text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                                >
+                                  <span className="truncate">{p.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+
                 <div className="text-center mb-12">
                   <span className="inline-block px-4 py-1.5 rounded-full bg-white/10 text-white/70 font-medium text-sm mb-6 tracking-widest uppercase">
                     Question {currentQuestionIndex + 1} of {totalQuestions}
                   </span>
-                  <h2 className="text-3xl md:text-5xl font-bold mb-4 leading-tight">{currentQuestion.text}</h2>
+                  <div className="relative">
+                    {/* Lightning Effect */}
+                    {activeEffects.some(e => e.type === 'LIGHTNING' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 bg-zinc-950 z-10 flex flex-col items-center justify-center text-yellow-400 animate-pulse rounded-2xl">
+                        <Zap className="w-12 h-12 mb-2" />
+                        <h3 className="text-lg font-bold uppercase tracking-widest">Blinded!</h3>
+                      </div>
+                    )}
+
+                    {/* Freeze Effect */}
+                    {activeEffects.some(e => e.type === 'FREEZE' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 bg-cyan-500/10 z-10 pointer-events-none border-4 border-cyan-400/30 rounded-2xl backdrop-blur-[1px]">
+                        <div className="absolute top-2 right-2 text-cyan-400 animate-pulse">
+                          <Snowflake className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Shield Effect */}
+                    {activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none border-4 border-blue-500/50 rounded-2xl shadow-[inset_0_0_30px_rgba(59,130,246,0.2)]">
+                        <div className="absolute top-2 left-2 text-blue-400">
+                          <Shield className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Double Points Indicator */}
+                    {activeEffects.some(e => e.type === 'DOUBLE_POINTS' && e.endTime > Date.now()) && (
+                      <motion.div 
+                        initial={{ scale: 0, y: -20 }}
+                        animate={{ scale: 1, y: 0 }}
+                        className="absolute -top-8 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-2 z-30"
+                      >
+                        <TrendingUp className="w-4 h-4" /> 2X POINTS ACTIVE
+                      </motion.div>
+                    )}
+
+                    <h2 className="text-3xl md:text-5xl font-bold mb-4 leading-tight">{currentQuestion.text}</h2>
+                  </div>
                 </div>
                 
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                  {currentQuestion.options.map((opt: string, i: number) => {
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 relative">
+                  {/* Fireball Effect */}
+                  {activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) && (
+                    <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
+                      <div className="absolute inset-0 bg-orange-600/20 mix-blend-overlay" />
+                      {[...Array(6)].map((_, i) => (
+                        <motion.div
+                          key={i}
+                          initial={{ y: 300, opacity: 0 }}
+                          animate={{ y: -300, opacity: [0, 1, 0] }}
+                          transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.3 }}
+                          className="absolute bottom-0 text-orange-500"
+                          style={{ left: `${i * 20}%` }}
+                        >
+                          <Flame className="w-16 h-16" />
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(activeEffects.some(e => e.type === 'TORNADO' && e.endTime > Date.now()) 
+                    ? shuffledOptions 
+                    : currentQuestion.options
+                  ).map((opt: string, i: number) => {
                     const colors = [
                       'bg-rose-500 hover:bg-rose-400 shadow-[0_6px_0_rgb(159,18,57)]',
                       'bg-blue-500 hover:bg-blue-400 shadow-[0_6px_0_rgb(30,58,138)]',
@@ -495,6 +698,13 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                     
                     const isSelected = selectedAnswer === opt;
                     const isDisabled = !!selectedAnswer;
+
+                    // Scissors effect: hide 2 wrong answers
+                    const isWrong = opt !== currentQuestion.correctAnswer;
+                    const wrongOptions = currentQuestion.options.filter((o: string) => o !== currentQuestion.correctAnswer);
+                    const hiddenByScissors = scissorsUsed && isWrong && wrongOptions.indexOf(opt) < 2;
+
+                    if (hiddenByScissors && !answerResult) return <div key={i} className="min-h-[120px]" />;
 
                     return (
                       <button
