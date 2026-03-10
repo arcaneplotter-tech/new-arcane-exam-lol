@@ -9,6 +9,7 @@ export type GameSettings = {
   canSkipQuestions: boolean;
   pointMultiplier: number;
   penaltyPoints: number;
+  chaosMode: boolean;
 };
 
 export type Question = {
@@ -20,7 +21,7 @@ export type Question = {
   explanation?: string;
 };
 
-export type PowerUpType = 'SCISSORS' | 'LIGHTNING' | 'FIREBALL' | 'TORNADO' | 'SHIELD' | 'FREEZE' | 'DOUBLE_POINTS' | 'THIEF';
+export type PowerUpType = 'SCISSORS' | 'LIGHTNING' | 'FIREBALL' | 'TORNADO' | 'SHIELD' | 'FREEZE' | 'DOUBLE_POINTS' | 'THIEF' | 'TIME_WARP' | 'MIRROR' | 'BOMB' | 'CLUE' | 'REVEAL' | 'MAGNET' | 'SHUFFLE';
 
 export type PowerUp = {
   id: string;

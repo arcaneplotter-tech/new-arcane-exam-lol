@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Users, Play, ArrowLeft, Trophy, CheckCircle2, XCircle, Loader2, Copy, Check, Timer, ChevronDown, ChevronUp, Settings, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand } from 'lucide-react';
+import { Upload, Users, Play, ArrowLeft, Trophy, CheckCircle2, XCircle, Loader2, Copy, Check, Timer, ChevronDown, ChevronUp, Settings, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle } from 'lucide-react';
 import Papa from 'papaparse';
 import { Question, Player, GameState, MessageType, GameSettings, ChatMessage, PowerUp, PowerUpType } from '../types';
 import { clsx } from 'clsx';
@@ -30,7 +30,8 @@ export function HostView({ onBack }: HostViewProps) {
     showCorrectAnswer: true,
     canSkipQuestions: true,
     pointMultiplier: 1,
-    penaltyPoints: 0
+    penaltyPoints: 0,
+    chaosMode: false
   });
   
   const [hostQuickCurrentIndex, setHostQuickCurrentIndex] = useState(0);
@@ -189,25 +190,59 @@ export function HostView({ onBack }: HostViewProps) {
           
           if (isCorrect) {
             const hasDoublePoints = p.activeEffects.some(e => e.type === 'DOUBLE_POINTS' && e.endTime > Date.now());
+            const hasClue = p.activeEffects.some(e => e.type === 'CLUE' && e.endTime > Date.now());
+            
             points = Math.round(1000 * (timeLeftRef.current / q.timeLimit) * settingsRef.current.pointMultiplier);
+            
             if (hasDoublePoints) {
               points *= 2;
               // Remove effect
               setPlayers(prev => prev.map(pl => pl.id === conn.peer ? { ...pl, activeEffects: pl.activeEffects.filter(e => e.type !== 'DOUBLE_POINTS') } : pl));
             }
             
-            // 30% chance to get a lucky block on correct answer in NORMAL mode
-            if (settingsRef.current.examType === 'NORMAL' && Math.random() < 0.3) {
-              const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF'];
+            if (hasClue) {
+              points = Math.round(points * 0.5);
+              // Remove effect
+              setPlayers(prev => prev.map(pl => pl.id === conn.peer ? { ...pl, activeEffects: pl.activeEffects.filter(e => e.type !== 'CLUE') } : pl));
+            }
+            
+            // 30% chance to get a lucky block on correct answer in NORMAL mode (only if chaosMode is on)
+            if (settingsRef.current.examType === 'NORMAL' && settingsRef.current.chaosMode && Math.random() < 0.3) {
+              const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF', 'TIME_WARP', 'MIRROR', 'BOMB', 'CLUE', 'REVEAL', 'MAGNET', 'SHUFFLE'];
               const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
               const powerUp: PowerUp = { id: Math.random().toString(36).substr(2, 9), type };
               
-              if (conn.open) {
-                conn.send({ type: 'GIVE_POWER_UP', powerUp });
+              // MAGNET logic: check if anyone else has MAGNET active
+              const magnetHolder = playersRef.current.find(p => p.id !== conn.peer && p.activeEffects.some(e => e.type === 'MAGNET' && e.endTime > Date.now()));
+              
+              if (magnetHolder) {
+                // Give to magnet holder instead
+                if (magnetHolder.id === 'host') {
+                  setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: [...p.powerUps, powerUp] } : p));
+                  setMessages(prev => [...prev, { senderId: 'system', senderName: 'System', text: `Magnet attracted a power-up from ${p.name}!`, timestamp: Date.now() }]);
+                } else if (magnetHolder.connection && magnetHolder.connection.open) {
+                  magnetHolder.connection.send({ type: 'GIVE_POWER_UP', powerUp });
+                  magnetHolder.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: `Magnet attracted a power-up from ${p.name}!`, timestamp: Date.now() }});
+                }
+                // Notify the original player
+                if (conn.open) conn.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: `Your power-up was attracted by ${magnetHolder.name}'s Magnet!`, timestamp: Date.now() }});
+                
+                // Remove MAGNET effect after use
+                setPlayers(prev => prev.map(pl => pl.id === magnetHolder.id ? { ...pl, activeEffects: pl.activeEffects.filter(e => e.type !== 'MAGNET') } : pl));
+              } else {
+                if (conn.open) {
+                  conn.send({ type: 'GIVE_POWER_UP', powerUp });
+                }
               }
             }
           } else {
+            const hasBomb = p.activeEffects.some(e => e.type === 'BOMB' && e.endTime > Date.now());
             points = -settingsRef.current.penaltyPoints;
+            if (hasBomb) {
+              points -= 500;
+              // Remove effect
+              setPlayers(prev => prev.map(pl => pl.id === conn.peer ? { ...pl, activeEffects: pl.activeEffects.filter(e => e.type !== 'BOMB') } : pl));
+            }
           }
           
           if (conn.open) {
@@ -269,7 +304,7 @@ export function HostView({ onBack }: HostViewProps) {
           // Remove power-up from player
           setPlayers(prev => prev.map(p => p.id === conn.peer ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
           
-          if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS') {
+          if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS' || powerUp.type === 'MIRROR' || powerUp.type === 'CLUE' || powerUp.type === 'REVEAL' || powerUp.type === 'MAGNET') {
             // Self-applied
             setPlayers(prev => prev.map(p => p.id === conn.peer ? { 
               ...p, 
@@ -278,11 +313,47 @@ export function HostView({ onBack }: HostViewProps) {
             if (conn.open) {
               conn.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
             }
+
+            if (powerUp.type === 'REVEAL') {
+              // Calculate most popular answer
+              const answers: Record<string, number> = {};
+              playersRef.current.forEach(p => {
+                if (p.currentAnswer) {
+                  answers[p.currentAnswer] = (answers[p.currentAnswer] || 0) + 1;
+                }
+              });
+              const popular = Object.entries(answers).sort((a, b) => b[1] - a[1])[0];
+              const msg = popular ? `Popular answer: ${popular[0]} (${popular[1]} players)` : "No answers yet!";
+              if (conn.open) conn.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
+            }
+          } else if (powerUp.type === 'TIME_WARP') {
+            // Reset timer
+            const q = questionsRef.current[currentQuestionIndexRef.current];
+            if (q) {
+              setTimeLeft(q.timeLimit);
+            }
           } else {
-            // Offensive power-ups (LIGHTNING, FIREBALL, TORNADO, THIEF)
+            // Offensive power-ups (LIGHTNING, FIREBALL, TORNADO, THIEF, BOMB)
             const target = playersRef.current.find(p => p.id === targetId);
             if (target) {
               const hasShield = target.activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now());
+              const hasMirror = target.activeEffects.some(e => e.type === 'MIRROR' && e.endTime > Date.now());
+              
+              if (hasMirror && powerUp.type !== 'THIEF') {
+                // Reflect back to sender
+                setPlayers(prev => prev.map(p => p.id === targetId ? { 
+                  ...p, 
+                  activeEffects: p.activeEffects.filter(e => e.type !== 'MIRROR') 
+                } : p));
+                
+                const msg = `Mirror reflected ${powerUp.type} back to ${player.name}!`;
+                if (conn.open) {
+                  conn.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
+                  conn.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
+                }
+                return;
+              }
+
               if (hasShield) {
                 // Remove shield and don't apply effect
                 setPlayers(prev => prev.map(p => p.id === targetId ? { 
@@ -313,6 +384,12 @@ export function HostView({ onBack }: HostViewProps) {
                   } else if (target.connection && target.connection.open) {
                     target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: notifyMsg, timestamp: Date.now() }});
                   }
+                }
+              } else if (powerUp.type === 'SHUFFLE') {
+                if (targetId === 'host') {
+                  setShuffledOptions(prev => [...prev].sort(() => Math.random() - 0.5));
+                } else if (target.connection && target.connection.open) {
+                  target.connection.send({ type: 'APPLY_EFFECT', effect: 'SHUFFLE' });
                 }
               } else if (targetId === 'host') {
                 setPlayers(prev => prev.map(p => p.id === 'host' ? { 
@@ -374,6 +451,56 @@ export function HostView({ onBack }: HostViewProps) {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Chaos Mode Events
+  useEffect(() => {
+    let chaosInterval: NodeJS.Timeout | null = null;
+    
+    if (gameState === 'QUESTION' && settings.chaosMode) {
+      chaosInterval = setInterval(() => {
+        if (playersRef.current.length === 0) return;
+        
+        const eventType = Math.random();
+        const randomPlayer = playersRef.current[Math.floor(Math.random() * playersRef.current.length)];
+        const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF', 'TIME_WARP', 'MIRROR', 'BOMB', 'CLUE', 'REVEAL', 'MAGNET', 'SHUFFLE'];
+        
+        if (eventType < 0.6) {
+          // Give random power-up
+          const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+          const powerUp: PowerUp = { id: Math.random().toString(36).substr(2, 9), type };
+          
+          if (randomPlayer.id === 'host') {
+            setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: [...p.powerUps, powerUp] } : p));
+            setMessages(prev => [...prev, { senderId: 'system', senderName: 'System', text: `Chaos! You received a ${type}!`, timestamp: Date.now() }]);
+          } else if (randomPlayer.connection && randomPlayer.connection.open) {
+            randomPlayer.connection.send({ type: 'GIVE_POWER_UP', powerUp });
+            randomPlayer.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: `Chaos! You received a ${type}!`, timestamp: Date.now() }});
+          }
+        } else {
+          // Apply random effect directly
+          const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+          const duration = (['SHIELD', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'MAGNET'].includes(type) ? 15000 : 5000);
+          
+          setPlayers(prev => prev.map(p => p.id === randomPlayer.id ? { 
+            ...p, 
+            activeEffects: [...p.activeEffects, { type, endTime: Date.now() + duration }] 
+          } : p));
+          
+          const msg = `Chaos! ${randomPlayer.name} was hit by ${type}!`;
+          setMessages(prev => [...prev, { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }]);
+          broadcast({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
+          
+          if (randomPlayer.id !== 'host' && randomPlayer.connection && randomPlayer.connection.open) {
+            randomPlayer.connection.send({ type: 'APPLY_EFFECT', effect: type });
+          }
+        }
+      }, 12000); // Every 12 seconds
+    }
+    
+    return () => {
+      if (chaosInterval) clearInterval(chaosInterval);
+    };
+  }, [gameState, settings.chaosMode]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -668,17 +795,56 @@ export function HostView({ onBack }: HostViewProps) {
     setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
 
     // Apply effect
-    if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS') {
+    if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS' || powerUp.type === 'MIRROR' || powerUp.type === 'CLUE' || powerUp.type === 'REVEAL' || powerUp.type === 'MAGNET') {
       // Self-applied
       setPlayers(prev => prev.map(p => p.id === 'host' ? { 
         ...p, 
         activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + (powerUp.type === 'FREEZE' ? 5000 : 30000) }] 
       } : p));
+
+      if (powerUp.type === 'REVEAL') {
+        const answers: Record<string, number> = {};
+        players.forEach(p => {
+          if (p.currentAnswer) {
+            answers[p.currentAnswer] = (answers[p.currentAnswer] || 0) + 1;
+          }
+        });
+        const popular = Object.entries(answers).sort((a, b) => b[1] - a[1])[0];
+        const msg = popular ? `Popular answer: ${popular[0]} (${popular[1]} players)` : "No answers yet!";
+        setMessages(prev => [...prev, { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }]);
+      }
+    } else if (powerUp.type === 'TIME_WARP') {
+      // Reset timer
+      const q = questions[currentQuestionIndex];
+      if (q) {
+        setTimeLeft(q.timeLimit);
+      }
     } else {
-      // Offensive power-ups (LIGHTNING, FIREBALL, TORNADO, THIEF)
+      // Offensive power-ups (LIGHTNING, FIREBALL, TORNADO, THIEF, BOMB)
       const target = players.find(p => p.id === targetId);
       if (target) {
         const hasShield = target.activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now());
+        const hasMirror = target.activeEffects.some(e => e.type === 'MIRROR' && e.endTime > Date.now());
+
+        if (hasMirror && powerUp.type !== 'THIEF') {
+          // Reflect back to host
+          setPlayers(prev => prev.map(p => p.id === targetId ? { 
+            ...p, 
+            activeEffects: p.activeEffects.filter(e => e.type !== 'MIRROR') 
+          } : p));
+          
+          setPlayers(prev => prev.map(p => p.id === 'host' ? { 
+            ...p, 
+            activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + 5000 }] 
+          } : p));
+          
+          const msg = `Mirror reflected ${powerUp.type} back to the Host!`;
+          if (targetId !== 'host' && target.connection && target.connection.open) {
+            target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
+          }
+          return;
+        }
+
         if (hasShield) {
           // Remove shield and don't apply effect
           setPlayers(prev => prev.map(p => p.id === targetId ? { 
@@ -703,6 +869,12 @@ export function HostView({ onBack }: HostViewProps) {
             if (targetId !== 'host' && target.connection && target.connection.open) {
               target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: `Your ${stolenPowerUp.type} was stolen by the Host!`, timestamp: Date.now() }});
             }
+          }
+        } else if (powerUp.type === 'SHUFFLE') {
+          if (targetId === 'host') {
+            setShuffledOptions(prev => [...prev].sort(() => Math.random() - 0.5));
+          } else if (target.connection && target.connection.open) {
+            target.connection.send({ type: 'APPLY_EFFECT', effect: 'SHUFFLE' });
           }
         } else if (targetId === 'host') {
           setPlayers(prev => prev.map(p => p.id === 'host' ? { 
@@ -972,6 +1144,28 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className="relative">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only" 
+                          checked={settings.chaosMode}
+                          onChange={e => setSettings({ ...settings, chaosMode: e.target.checked })}
+                        />
+                        <div className={clsx(
+                          "w-10 h-6 rounded-full transition-colors",
+                          settings.chaosMode ? "bg-orange-600" : "bg-zinc-800"
+                        )}></div>
+                        <div className={clsx(
+                          "absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform",
+                          settings.chaosMode ? "translate-x-4" : "translate-x-0"
+                        )}></div>
+                      </div>
+                      <span className="text-sm font-bold text-orange-400 group-hover:text-orange-300 transition-colors uppercase tracking-tighter flex items-center gap-1">
+                        <Flame className="w-3 h-3" /> Chaos Mode
+                      </span>
+                    </label>
+
                     <div>
                       <label className="block text-xs text-zinc-500 mb-1 uppercase tracking-wider">Point Multiplier</label>
                       <select 
@@ -1146,7 +1340,18 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
         )}
 
         {gameState === 'QUESTION' && questions[currentQuestionIndex] && (
-          <div className="w-full max-w-6xl flex flex-col items-center">
+          <div className="w-full max-w-6xl flex flex-col items-center relative">
+            {settings.chaosMode && (
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
+                <motion.div 
+                  animate={{ scale: [1, 1.1, 1] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                  className="bg-orange-600/20 border border-orange-500/50 text-orange-400 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-2 shadow-[0_0_15px_rgba(234,88,12,0.3)] whitespace-nowrap"
+                >
+                  <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
+                </motion.div>
+              </div>
+            )}
             {/* Power-ups UI for Host */}
             {players.find(p => p.id === 'host') && (
               <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
@@ -1177,13 +1382,20 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                             pu.type === 'TORNADO' ? '#10b981' :
                             pu.type === 'SHIELD' ? '#3b82f6' :
                             pu.type === 'FREEZE' ? '#06b6d4' :
-                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : '#f97316',
+                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : 
+                            pu.type === 'TIME_WARP' ? '#6366f1' :
+                            pu.type === 'MIRROR' ? '#ec4899' :
+                            pu.type === 'BOMB' ? '#18181b' :
+                            pu.type === 'CLUE' ? '#84cc16' :
+                            pu.type === 'REVEAL' ? '#f59e0b' :
+                            pu.type === 'MAGNET' ? '#64748b' :
+                            pu.type === 'SHUFFLE' ? '#7c3aed' : '#f97316',
                           borderColor: 'rgba(255,255,255,0.2)'
                         }}
                         onClick={() => {
                           if (pu.type === 'SCISSORS') {
                             useScissors(pu.id);
-                          } else if (pu.type === 'SHIELD' || pu.type === 'FREEZE' || pu.type === 'DOUBLE_POINTS') {
+                          } else if (['SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'REVEAL', 'MAGNET', 'TIME_WARP'].includes(pu.type)) {
                             usePowerUp(pu.id, 'host');
                           } else {
                             setShowTargetList(showTargetList === pu.id ? null : pu.id);
@@ -1198,6 +1410,13 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                         {pu.type === 'FREEZE' && <Snowflake className="w-7 h-7 text-white" />}
                         {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-7 h-7 text-white" />}
                         {pu.type === 'THIEF' && <Hand className="w-7 h-7 text-white" />}
+                        {pu.type === 'TIME_WARP' && <RotateCcw className="w-7 h-7 text-white" />}
+                        {pu.type === 'MIRROR' && <RefreshCw className="w-7 h-7 text-white" />}
+                        {pu.type === 'BOMB' && <Bomb className="w-7 h-7 text-white" />}
+                        {pu.type === 'CLUE' && <Lightbulb className="w-7 h-7 text-white" />}
+                        {pu.type === 'REVEAL' && <Eye className="w-7 h-7 text-white" />}
+                        {pu.type === 'MAGNET' && <Magnet className="w-7 h-7 text-white" />}
+                        {pu.type === 'SHUFFLE' && <Shuffle className="w-7 h-7 text-white" />}
                       </motion.button>
 
                       {showTargetList === pu.id && (
@@ -1273,6 +1492,42 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                 <div className="absolute inset-0 z-10 pointer-events-none border-4 border-blue-500/50 rounded-[3rem] shadow-[inset_0_0_50px_rgba(59,130,246,0.2)]">
                   <div className="absolute top-4 left-4 text-blue-400">
                     <Shield className="w-8 h-8" />
+                  </div>
+                </div>
+              )}
+
+              {/* Mirror Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'MIRROR' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 z-10 pointer-events-none border-4 border-pink-500/50 rounded-[3rem] shadow-[inset_0_0_50px_rgba(236,72,153,0.2)]">
+                  <div className="absolute bottom-4 right-4 text-pink-400 animate-spin-slow">
+                    <RefreshCw className="w-10 h-10" />
+                  </div>
+                </div>
+              )}
+
+              {/* Magnet Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'MAGNET' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 z-10 pointer-events-none">
+                  <div className="absolute top-4 right-16 text-slate-400 animate-bounce">
+                    <Magnet className="w-8 h-8" />
+                  </div>
+                </div>
+              )}
+
+              {/* Clue Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'CLUE' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 z-10 pointer-events-none bg-lime-500/5">
+                  <div className="absolute bottom-4 left-4 text-lime-400">
+                    <Lightbulb className="w-8 h-8" />
+                  </div>
+                </div>
+              )}
+
+              {/* Bomb Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'BOMB' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 z-10 pointer-events-none bg-red-900/10 rounded-[3rem]">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-ping">
+                    <Bomb className="w-32 h-32" />
                   </div>
                 </div>
               )}

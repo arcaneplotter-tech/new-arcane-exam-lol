@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle } from 'lucide-react';
 import { GameState, MessageType, ChatMessage, PowerUp, PowerUpType, ActiveEffect } from '../types';
 import { clsx } from 'clsx';
 
@@ -165,8 +165,12 @@ export function PlayerView({ onBack }: PlayerViewProps) {
     }
 
     if (data.type === 'APPLY_EFFECT') {
-      const duration = (data.effect === 'FREEZE' ? 5000 : (data.effect === 'SHIELD' || data.effect === 'DOUBLE_POINTS') ? 30000 : 5000);
+      const duration = (['SHIELD', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'MAGNET'].includes(data.effect) ? 30000 : 5000);
       setActiveEffects(prev => [...prev, { type: data.effect, endTime: Date.now() + duration }]);
+      
+      if (data.effect === 'SHUFFLE') {
+        setShuffledOptions(prev => [...prev].sort(() => Math.random() - 0.5));
+      }
     }
 
     if (data.type === 'PLAYER_LIST') {
@@ -527,6 +531,17 @@ export function PlayerView({ onBack }: PlayerViewProps) {
 
             {gameState === 'QUESTION' && currentQuestion && !answerResult && (
               <div className="w-full h-full flex flex-col max-w-5xl mx-auto relative">
+                {settings?.chaosMode && (
+                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
+                    <motion.div 
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                      className="bg-orange-600/20 border border-orange-500/50 text-orange-400 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-2 shadow-[0_0_15px_rgba(234,88,12,0.3)] whitespace-nowrap"
+                    >
+                      <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
+                    </motion.div>
+                  </div>
+                )}
                 {/* Power-ups UI for Player */}
                 <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
                   <AnimatePresence>
@@ -556,13 +571,20 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                             pu.type === 'TORNADO' ? '#10b981' :
                             pu.type === 'SHIELD' ? '#3b82f6' :
                             pu.type === 'FREEZE' ? '#06b6d4' :
-                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : '#f97316',
+                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : 
+                            pu.type === 'TIME_WARP' ? '#6366f1' :
+                            pu.type === 'MIRROR' ? '#ec4899' :
+                            pu.type === 'BOMB' ? '#18181b' :
+                            pu.type === 'CLUE' ? '#84cc16' :
+                            pu.type === 'REVEAL' ? '#f59e0b' :
+                            pu.type === 'MAGNET' ? '#64748b' :
+                            pu.type === 'SHUFFLE' ? '#7c3aed' : '#f97316',
                           borderColor: 'rgba(255,255,255,0.2)'
                         }}
                         onClick={() => {
                           if (pu.type === 'SCISSORS') {
                             useScissors(pu.id);
-                          } else if (pu.type === 'SHIELD' || pu.type === 'FREEZE' || pu.type === 'DOUBLE_POINTS') {
+                          } else if (['SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'REVEAL', 'MAGNET', 'TIME_WARP'].includes(pu.type)) {
                             usePowerUp(pu.id, peerRef.current?.id || '');
                           } else {
                             setShowTargetList(showTargetList === pu.id ? null : pu.id);
@@ -577,6 +599,13 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                         {pu.type === 'FREEZE' && <Snowflake className="w-7 h-7 text-white" />}
                         {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-7 h-7 text-white" />}
                         {pu.type === 'THIEF' && <Hand className="w-7 h-7 text-white" />}
+                        {pu.type === 'TIME_WARP' && <RotateCcw className="w-7 h-7 text-white" />}
+                        {pu.type === 'MIRROR' && <RefreshCw className="w-7 h-7 text-white" />}
+                        {pu.type === 'BOMB' && <Bomb className="w-7 h-7 text-white" />}
+                        {pu.type === 'CLUE' && <Lightbulb className="w-7 h-7 text-white" />}
+                        {pu.type === 'REVEAL' && <Eye className="w-7 h-7 text-white" />}
+                        {pu.type === 'MAGNET' && <Magnet className="w-7 h-7 text-white" />}
+                        {pu.type === 'SHUFFLE' && <Shuffle className="w-7 h-7 text-white" />}
                         </motion.button>
 
                         {showTargetList === pu.id && (
@@ -639,6 +668,42 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                       <div className="absolute inset-0 z-10 pointer-events-none border-4 border-blue-500/50 rounded-2xl shadow-[inset_0_0_30px_rgba(59,130,246,0.2)]">
                         <div className="absolute top-2 left-2 text-blue-400">
                           <Shield className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mirror Effect */}
+                    {activeEffects.some(e => e.type === 'MIRROR' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none border-4 border-pink-500/50 rounded-2xl shadow-[inset_0_0_30px_rgba(236,72,153,0.2)]">
+                        <div className="absolute bottom-2 right-2 text-pink-400 animate-spin-slow">
+                          <RefreshCw className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Magnet Effect */}
+                    {activeEffects.some(e => e.type === 'MAGNET' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none">
+                        <div className="absolute top-2 right-10 text-slate-400 animate-bounce">
+                          <Magnet className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Clue Effect */}
+                    {activeEffects.some(e => e.type === 'CLUE' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none bg-lime-500/5">
+                        <div className="absolute bottom-2 left-2 text-lime-400">
+                          <Lightbulb className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bomb Effect */}
+                    {activeEffects.some(e => e.type === 'BOMB' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none bg-red-900/10 rounded-2xl">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-ping">
+                          <Bomb className="w-20 h-20" />
                         </div>
                       </div>
                     )}
