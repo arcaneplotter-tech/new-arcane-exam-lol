@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Users, Play, ArrowLeft, Trophy, CheckCircle2, XCircle, Loader2, Copy, Check, Timer, ChevronDown, ChevronUp, Settings, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle, Moon, Skull, Ghost, ArrowDownCircle, Contrast, CloudLightning, Hammer, Info, X } from 'lucide-react';
+import { Upload, Users, Play, ArrowLeft, Trophy, CheckCircle2, XCircle, Loader2, Copy, Check, Timer, ChevronDown, ChevronUp, Settings, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle } from 'lucide-react';
 import Papa from 'papaparse';
 import { Question, Player, GameState, MessageType, GameSettings, ChatMessage, PowerUp, PowerUpType } from '../types';
 import { clsx } from 'clsx';
-import { POWER_UPS_INFO } from '../constants/powerUps';
 
 interface HostViewProps {
   onBack: () => void;
@@ -39,7 +38,6 @@ export function HostView({ onBack }: HostViewProps) {
   const [hostQuickAnswers, setHostQuickAnswers] = useState<Record<string, string>>({});
   const [hostQuickSubmitted, setHostQuickSubmitted] = useState(false);
   const [showHostControls, setShowHostControls] = useState(false);
-  const [showInfoModal, setShowInfoModal] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -49,7 +47,6 @@ export function HostView({ onBack }: HostViewProps) {
   const [showTargetList, setShowTargetList] = useState<string | null>(null); // powerUpId
   const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
   const [scissorsUsed, setScissorsUsed] = useState(false);
-  const [hammerUsed, setHammerUsed] = useState(false);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const playersRef = useRef<Player[]>([]);
@@ -103,11 +100,6 @@ export function HostView({ onBack }: HostViewProps) {
       console.error('PeerJS error:', err);
     });
 
-    newPeer.on('disconnected', () => {
-      console.log('Peer disconnected, attempting to reconnect...');
-      newPeer.reconnect();
-    });
-
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       newPeer.destroy();
@@ -132,8 +124,7 @@ export function HostView({ onBack }: HostViewProps) {
         currentAnswer: null,
         connection: conn,
         powerUps: [],
-        activeEffects: [],
-        correctCount: 0
+        activeEffects: []
       };
       
       setPlayers(prev => {
@@ -185,25 +176,9 @@ export function HostView({ onBack }: HostViewProps) {
       setTimeout(() => {
         broadcast({
           type: 'PLAYER_LIST',
-          players: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, isReady: p.isReady }))
+          players: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score }))
         });
       }, 500);
-    }
-
-    if (data.type === 'PLAYER_READY') {
-      setPlayers(prev => prev.map(p => {
-        if (p.id === conn.peer) {
-          return { ...p, isReady: data.ready };
-        }
-        return p;
-      }));
-      
-      setTimeout(() => {
-        broadcast({
-          type: 'PLAYER_LIST',
-          players: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, isReady: p.isReady }))
-        });
-      }, 100);
     }
 
     if (data.type === 'SUBMIT_ANSWER') {
@@ -231,9 +206,9 @@ export function HostView({ onBack }: HostViewProps) {
               setPlayers(prev => prev.map(pl => pl.id === conn.peer ? { ...pl, activeEffects: pl.activeEffects.filter(e => e.type !== 'CLUE') } : pl));
             }
             
-            // Guaranteed lucky block on correct answer in NORMAL mode (only if chaosMode is on)
-            if (settingsRef.current.examType === 'NORMAL' && settingsRef.current.chaosMode) {
-              const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF', 'TIME_WARP', 'MIRROR', 'BOMB', 'CLUE', 'REVEAL', 'MAGNET', 'SHUFFLE', 'BLACKOUT', 'POISON', 'VAMPIRE', 'GRAVITY', 'INVERT', 'METEOR', 'HAMMER'];
+            // 100% chance to get a lucky box on correct answer if chaosMode is enabled
+            if (settingsRef.current.chaosMode) {
+              const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF', 'TIME_WARP', 'MIRROR', 'BOMB', 'CLUE', 'REVEAL', 'MAGNET', 'SHUFFLE'];
               const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
               const powerUp: PowerUp = { id: Math.random().toString(36).substr(2, 9), type };
               
@@ -280,7 +255,7 @@ export function HostView({ onBack }: HostViewProps) {
             });
           }
           
-          return { ...p, hasAnswered: true, currentAnswer: data.answer, score: Math.max(0, p.score + points), correctCount: p.correctCount + (isCorrect ? 1 : 0) };
+          return { ...p, hasAnswered: true, currentAnswer: data.answer, score: Math.max(0, p.score + points) };
         }
         return p;
       }));
@@ -309,7 +284,7 @@ export function HostView({ onBack }: HostViewProps) {
                        - (wrongAnswers * settingsRef.current.penaltyPoints)
                        + (correctAnswers > 0 ? timeBonus : 0);
 
-          return { ...p, hasAnswered: true, score: Math.max(0, totalScore), timeTaken: data.timeTaken, correctCount: correctAnswers };
+          return { ...p, hasAnswered: true, score: Math.max(0, totalScore), timeTaken: data.timeTaken };
         }
         return p;
       }));
@@ -329,18 +304,14 @@ export function HostView({ onBack }: HostViewProps) {
           // Remove power-up from player
           setPlayers(prev => prev.map(p => p.id === conn.peer ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
           
-          if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS' || powerUp.type === 'MIRROR' || powerUp.type === 'CLUE' || powerUp.type === 'REVEAL' || powerUp.type === 'MAGNET' || powerUp.type === 'INVERT' || powerUp.type === 'GRAVITY' || powerUp.type === 'BLACKOUT' || powerUp.type === 'POISON') {
-            // Self-applied or targeted effects that go to activeEffects
-            const duration = (['SHIELD', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'MAGNET', 'INVERT', 'GRAVITY', 'BLACKOUT', 'POISON'].includes(powerUp.type) ? 30000 : 5000);
-            
-            setPlayers(prev => prev.map(p => p.id === targetId ? { 
+          if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS' || powerUp.type === 'MIRROR' || powerUp.type === 'CLUE' || powerUp.type === 'REVEAL' || powerUp.type === 'MAGNET') {
+            // Self-applied
+            setPlayers(prev => prev.map(p => p.id === conn.peer ? { 
               ...p, 
-              activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + duration }] 
+              activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + (powerUp.type === 'FREEZE' ? 5000 : 30000) }] 
             } : p));
-
-            const target = playersRef.current.find(p => p.id === targetId);
-            if (target && target.connection && target.connection.open) {
-              target.connection.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
+            if (conn.open) {
+              conn.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
             }
 
             if (powerUp.type === 'REVEAL') {
@@ -414,20 +385,6 @@ export function HostView({ onBack }: HostViewProps) {
                     target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: notifyMsg, timestamp: Date.now() }});
                   }
                 }
-              } else if (powerUp.type === 'VAMPIRE') {
-                const stealAmount = Math.min(target.score, 200);
-                setPlayers(prev => prev.map(p => {
-                  if (p.id === targetId) return { ...p, score: Math.max(0, p.score - stealAmount) };
-                  if (p.id === conn.peer) return { ...p, score: p.score + stealAmount };
-                  return p;
-                }));
-                const msg = `${player.name} used Vampire to steal ${stealAmount} points from ${target.name}!`;
-                broadcast({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
-              } else if (powerUp.type === 'METEOR') {
-                const damage = 300;
-                setPlayers(prev => prev.map(p => p.id === targetId ? { ...p, score: Math.max(0, p.score - damage) } : p));
-                const msg = `A Meteor hit ${target.name}, causing them to lose ${damage} points!`;
-                broadcast({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
               } else if (powerUp.type === 'SHUFFLE') {
                 if (targetId === 'host') {
                   setShuffledOptions(prev => [...prev].sort(() => Math.random() - 0.5));
@@ -487,25 +444,17 @@ export function HostView({ onBack }: HostViewProps) {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setPlayers(prev => prev.map(p => {
-        const hasPoison = p.activeEffects.some(e => e.type === 'POISON' && e.endTime > Date.now());
-        let newScore = p.score;
-        if (hasPoison) {
-          newScore = Math.max(0, p.score - 25); // 25 points per second
-        }
-        return {
-          ...p,
-          score: newScore,
-          activeEffects: p.activeEffects.filter(e => e.endTime > Date.now())
-        };
-      }));
+      setPlayers(prev => prev.map(p => ({
+        ...p,
+        activeEffects: p.activeEffects.filter(e => e.endTime > Date.now())
+      })));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Chaos Mode Events - Removed periodic effects
+  // Chaos Mode Events
   useEffect(() => {
-    // Periodic random effects removed as per user request
+    // Chaos mode now only enables lucky boxes
   }, [gameState, settings.chaosMode]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -540,8 +489,7 @@ export function HostView({ onBack }: HostViewProps) {
       currentAnswer: null,
       connection: null as any,
       powerUps: [],
-      activeEffects: [],
-      correctCount: 0
+      activeEffects: []
     };
     setPlayers(prev => [...prev, newPlayer]);
   };
@@ -634,7 +582,7 @@ export function HostView({ onBack }: HostViewProps) {
       type: 'STATE_UPDATE', 
       state: 'LEADERBOARD',
       data: {
-        leaderboard: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, timeTaken: p.timeTaken, correctCount: p.correctCount })).sort((a, b) => b.score - a.score),
+        leaderboard: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, timeTaken: p.timeTaken })).sort((a, b) => b.score - a.score),
         fullQuestions: questionsRef.current // Send full questions including correct answers for review
       }
     });
@@ -668,7 +616,7 @@ export function HostView({ onBack }: HostViewProps) {
 
     setPlayers(prev => prev.map(p => {
       if (p.id === 'host') {
-        return { ...p, hasAnswered: true, score: totalScore, timeTaken, correctCount: correctAnswers };
+        return { ...p, hasAnswered: true, score: totalScore, timeTaken };
       }
       return p;
     }));
@@ -757,7 +705,7 @@ export function HostView({ onBack }: HostViewProps) {
         type: 'STATE_UPDATE', 
         state: 'LEADERBOARD',
         data: {
-          leaderboard: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, correctCount: p.correctCount })).sort((a, b) => b.score - a.score)
+          leaderboard: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score })).sort((a, b) => b.score - a.score)
         }
       });
     } else if (gameState === 'LEADERBOARD') {
@@ -767,7 +715,7 @@ export function HostView({ onBack }: HostViewProps) {
           type: 'STATE_UPDATE', 
           state: 'FINISHED',
           data: {
-            leaderboard: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, correctCount: p.correctCount })).sort((a, b) => b.score - a.score),
+            leaderboard: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score })).sort((a, b) => b.score - a.score),
             fullQuestions: questionsRef.current
           }
         });
@@ -776,23 +724,6 @@ export function HostView({ onBack }: HostViewProps) {
       }
     }
   };
-
-  // Auto-advance if all players answered in NORMAL mode
-  useEffect(() => {
-    if (settings.examType === 'NORMAL' && players.length > 0 && players.every(p => p.hasAnswered)) {
-      if (gameState === 'QUESTION' && showAnswer) {
-        const timer = setTimeout(() => {
-          nextPhase();
-        }, 4000);
-        return () => clearTimeout(timer);
-      } else if (gameState === 'LEADERBOARD' && currentQuestionIndex + 1 < questions.length) {
-        const timer = setTimeout(() => {
-          nextPhase();
-        }, 4000);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [gameState, showAnswer, players, settings.examType, currentQuestionIndex, questions.length]);
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
@@ -824,19 +755,12 @@ export function HostView({ onBack }: HostViewProps) {
     setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
 
     // Apply effect
-    if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS' || powerUp.type === 'MIRROR' || powerUp.type === 'CLUE' || powerUp.type === 'REVEAL' || powerUp.type === 'MAGNET' || powerUp.type === 'INVERT' || powerUp.type === 'GRAVITY' || powerUp.type === 'BLACKOUT' || powerUp.type === 'POISON') {
-      // Self-applied or targeted effects that go to activeEffects
-      const duration = (['SHIELD', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'MAGNET', 'INVERT', 'GRAVITY', 'BLACKOUT', 'POISON'].includes(powerUp.type) ? 30000 : 5000);
-      
-      setPlayers(prev => prev.map(p => p.id === targetId ? { 
+    if (powerUp.type === 'SHIELD' || powerUp.type === 'FREEZE' || powerUp.type === 'DOUBLE_POINTS' || powerUp.type === 'MIRROR' || powerUp.type === 'CLUE' || powerUp.type === 'REVEAL' || powerUp.type === 'MAGNET') {
+      // Self-applied
+      setPlayers(prev => prev.map(p => p.id === 'host' ? { 
         ...p, 
-        activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + duration }] 
+        activeEffects: [...p.activeEffects, { type: powerUp.type, endTime: Date.now() + (powerUp.type === 'FREEZE' ? 5000 : 30000) }] 
       } : p));
-
-      const target = players.find(p => p.id === targetId);
-      if (target && target.id !== 'host' && target.connection && target.connection.open) {
-        target.connection.send({ type: 'APPLY_EFFECT', effect: powerUp.type });
-      }
 
       if (powerUp.type === 'REVEAL') {
         const answers: Record<string, number> = {};
@@ -906,20 +830,6 @@ export function HostView({ onBack }: HostViewProps) {
               target.connection.send({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: `Your ${stolenPowerUp.type} was stolen by the Host!`, timestamp: Date.now() }});
             }
           }
-        } else if (powerUp.type === 'VAMPIRE') {
-          const stealAmount = Math.min(target.score, 200);
-          setPlayers(prev => prev.map(p => {
-            if (p.id === targetId) return { ...p, score: Math.max(0, p.score - stealAmount) };
-            if (p.id === 'host') return { ...p, score: p.score + stealAmount };
-            return p;
-          }));
-          const msg = `Host used Vampire to steal ${stealAmount} points from ${target.name}!`;
-          broadcast({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
-        } else if (powerUp.type === 'METEOR') {
-          const damage = 300;
-          setPlayers(prev => prev.map(p => p.id === targetId ? { ...p, score: Math.max(0, p.score - damage) } : p));
-          const msg = `A Meteor hit ${target.name}, causing them to lose ${damage} points!`;
-          broadcast({ type: 'CHAT_MESSAGE', message: { senderId: 'system', senderName: 'System', text: msg, timestamp: Date.now() }});
         } else if (powerUp.type === 'SHUFFLE') {
           if (targetId === 'host') {
             setShuffledOptions(prev => [...prev].sort(() => Math.random() - 0.5));
@@ -947,16 +857,6 @@ export function HostView({ onBack }: HostViewProps) {
 
     setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
     setScissorsUsed(true);
-  };
-
-  const useHammer = (powerUpId: string) => {
-    const host = players.find(p => p.id === 'host');
-    if (!host) return;
-    const powerUp = host.powerUps.find(pu => pu.id === powerUpId && pu.type === 'HAMMER');
-    if (!powerUp) return;
-
-    setPlayers(prev => prev.map(p => p.id === 'host' ? { ...p, powerUps: p.powerUps.filter(pu => pu.id !== powerUpId) } : p));
-    setHammerUsed(true);
   };
 
   const openLuckyBlock = () => {
@@ -1285,11 +1185,11 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
 
               <button
                 onClick={startGame}
-                disabled={questions.length === 0 || players.length === 0 || !players.every(p => p.id === 'host' || p.isReady)}
+                disabled={questions.length === 0 || players.length === 0}
                 className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all"
               >
                 <Play className="w-6 h-6" />
-                {players.length > 0 && !players.every(p => p.id === 'host' || p.isReady) ? 'Waiting for players to be ready...' : 'Start Game'}
+                Start Game
               </button>
             </div>
 
@@ -1316,47 +1216,13 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                           initial={{ opacity: 0, scale: 0.9 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.9 }}
-                          className="bg-zinc-800/50 border border-white/5 rounded-lg p-3 flex items-center gap-3 relative overflow-hidden"
+                          className="bg-zinc-800/50 border border-white/5 rounded-lg p-3 flex items-center gap-3"
                         >
-                          <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-bold z-10">
+                          <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-bold">
                             {p.name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="flex-1 min-w-0 z-10">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium truncate">{p.name}</span>
-                              {p.id === 'host' && <span className="text-[8px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider">Host</span>}
-                              {p.id !== 'host' && p.isReady && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                            </div>
-                            {/* Active Effects */}
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {p.activeEffects.map((effect, idx) => {
-                                const timeLeft = Math.max(0, Math.ceil((effect.endTime - Date.now()) / 1000));
-                                if (timeLeft === 0) return null;
-                                return (
-                                  <div key={idx} className="flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-zinc-400 border border-white/5">
-                                    {effect.type === 'SHIELD' && <Shield className="w-2.5 h-2.5 text-blue-400" />}
-                                    {effect.type === 'FREEZE' && <Snowflake className="w-2.5 h-2.5 text-cyan-400" />}
-                                    {effect.type === 'DOUBLE_POINTS' && <TrendingUp className="w-2.5 h-2.5 text-purple-400" />}
-                                    {effect.type === 'LIGHTNING' && <Zap className="w-2.5 h-2.5 text-yellow-400" />}
-                                    {effect.type === 'FIREBALL' && <Flame className="w-2.5 h-2.5 text-orange-400" />}
-                                    {effect.type === 'TORNADO' && <Wind className="w-2.5 h-2.5 text-emerald-400" />}
-                                    {effect.type === 'MIRROR' && <RefreshCw className="w-2.5 h-2.5 text-pink-400" />}
-                                    {effect.type === 'CLUE' && <Lightbulb className="w-2.5 h-2.5 text-lime-400" />}
-                                    {effect.type === 'MAGNET' && <Magnet className="w-2.5 h-2.5 text-slate-400" />}
-                                    {effect.type === 'BLACKOUT' && <Moon className="w-2.5 h-2.5 text-zinc-600" />}
-                                    {effect.type === 'POISON' && <Skull className="w-2.5 h-2.5 text-green-500" />}
-                                    {effect.type === 'GRAVITY' && <ArrowDownCircle className="w-2.5 h-2.5 text-amber-700" />}
-                                    {effect.type === 'INVERT' && <Contrast className="w-2.5 h-2.5 text-white" />}
-                                    {effect.type === 'BOMB' && <Bomb className="w-2.5 h-2.5 text-red-500" />}
-                                    <span>{timeLeft}s</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                          {p.id !== 'host' && p.isReady && (
-                            <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
-                          )}
+                          <span className="font-medium truncate">{p.name}</span>
+                          {p.id === 'host' && <span className="text-[8px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider">Host</span>}
                         </motion.div>
                       ))}
                     </AnimatePresence>
@@ -1426,26 +1292,8 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
           <motion.div
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="text-center relative"
+            className="text-center"
           >
-            {settings.chaosMode && (
-              <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
-                <motion.div 
-                  animate={{ scale: [1, 1.1, 1] }}
-                  transition={{ repeat: Infinity, duration: 2 }}
-                  className="bg-orange-600/90 border border-orange-500/50 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-2 shadow-[0_0_15px_rgba(234,88,12,0.3)] whitespace-nowrap"
-                >
-                  <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
-                </motion.div>
-                <button 
-                  onClick={() => setShowInfoModal(true)}
-                  className="bg-zinc-800/80 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white p-1.5 rounded-full transition-colors shadow-lg"
-                  title="Game Info"
-                >
-                  <Info className="w-4 h-4" />
-                </button>
-              </div>
-            )}
             <h2 className="text-6xl font-bold mb-4">Get Ready!</h2>
             <p className="text-2xl text-zinc-400">Look at the screen</p>
           </motion.div>
@@ -1454,7 +1302,7 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
         {gameState === 'QUESTION' && questions[currentQuestionIndex] && (
           <div className="w-full max-w-6xl flex flex-col items-center relative">
             {settings.chaosMode && (
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20">
                 <motion.div 
                   animate={{ scale: [1, 1.1, 1] }}
                   transition={{ repeat: Infinity, duration: 2 }}
@@ -1462,152 +1310,100 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                 >
                   <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
                 </motion.div>
-                <button 
-                  onClick={() => setShowInfoModal(true)}
-                  className="bg-zinc-900/80 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white p-1.5 rounded-full transition-colors shadow-lg"
-                  title="Game Info"
-                >
-                  <Info className="w-4 h-4" />
-                </button>
               </div>
             )}
             {/* Power-ups UI for Host */}
             {players.find(p => p.id === 'host') && (
-              <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4">
+              <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-3">
                 <AnimatePresence>
                   {showLuckyBlock && (
-                    <motion.div
-                      initial={{ scale: 0, y: 100 }}
-                      animate={{ scale: 1, y: 0 }}
-                      exit={{ scale: 0, y: 100 }}
-                      className="relative"
+                    <motion.button
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      exit={{ scale: 0, rotate: 180 }}
+                      onClick={openLuckyBlock}
+                      className="w-16 h-16 bg-yellow-500 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(234,179,8,0.5)] border-4 border-yellow-400 animate-bounce"
                     >
+                      <Box className="w-8 h-8 text-white" />
+                    </motion.button>
+                  )}
+
+                  {players.find(p => p.id === 'host')?.powerUps.map((pu) => (
+                    <div key={pu.id} className="relative group">
                       <motion.button
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={openLuckyBlock}
-                        className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-amber-600 rounded-3xl flex items-center justify-center shadow-[0_0_30px_rgba(234,179,8,0.4)] border-4 border-yellow-300/50 relative group overflow-hidden"
+                        initial={{ x: 50, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all hover:scale-110"
+                        style={{ 
+                          backgroundColor: 
+                            pu.type === 'SCISSORS' ? '#4f46e5' : 
+                            pu.type === 'LIGHTNING' ? '#eab308' : 
+                            pu.type === 'FIREBALL' ? '#ef4444' : 
+                            pu.type === 'TORNADO' ? '#10b981' :
+                            pu.type === 'SHIELD' ? '#3b82f6' :
+                            pu.type === 'FREEZE' ? '#06b6d4' :
+                            pu.type === 'DOUBLE_POINTS' ? '#a855f7' : 
+                            pu.type === 'TIME_WARP' ? '#6366f1' :
+                            pu.type === 'MIRROR' ? '#ec4899' :
+                            pu.type === 'BOMB' ? '#18181b' :
+                            pu.type === 'CLUE' ? '#84cc16' :
+                            pu.type === 'REVEAL' ? '#f59e0b' :
+                            pu.type === 'MAGNET' ? '#64748b' :
+                            pu.type === 'SHUFFLE' ? '#7c3aed' : '#f97316',
+                          borderColor: 'rgba(255,255,255,0.2)'
+                        }}
+                        onClick={() => {
+                          if (pu.type === 'SCISSORS') {
+                            useScissors(pu.id);
+                          } else if (['SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'REVEAL', 'MAGNET', 'TIME_WARP'].includes(pu.type)) {
+                            usePowerUp(pu.id, 'host');
+                          } else {
+                            setShowTargetList(showTargetList === pu.id ? null : pu.id);
+                          }
+                        }}
                       >
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-from)_0%,_transparent_70%)] opacity-50 group-hover:opacity-100 transition-opacity" />
-                        <Box className="w-10 h-10 text-white drop-shadow-lg relative z-10" />
-                        <motion.div 
-                          animate={{ opacity: [0, 1, 0], scale: [1, 1.2, 1] }}
-                          transition={{ repeat: Infinity, duration: 2 }}
-                          className="absolute inset-0 bg-white/20"
-                        />
+                        {pu.type === 'SCISSORS' && <Scissors className="w-7 h-7 text-white" />}
+                        {pu.type === 'LIGHTNING' && <Zap className="w-7 h-7 text-white" />}
+                        {pu.type === 'FIREBALL' && <Flame className="w-7 h-7 text-white" />}
+                        {pu.type === 'TORNADO' && <Wind className="w-7 h-7 text-white" />}
+                        {pu.type === 'SHIELD' && <Shield className="w-7 h-7 text-white" />}
+                        {pu.type === 'FREEZE' && <Snowflake className="w-7 h-7 text-white" />}
+                        {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-7 h-7 text-white" />}
+                        {pu.type === 'THIEF' && <Hand className="w-7 h-7 text-white" />}
+                        {pu.type === 'TIME_WARP' && <RotateCcw className="w-7 h-7 text-white" />}
+                        {pu.type === 'MIRROR' && <RefreshCw className="w-7 h-7 text-white" />}
+                        {pu.type === 'BOMB' && <Bomb className="w-7 h-7 text-white" />}
+                        {pu.type === 'CLUE' && <Lightbulb className="w-7 h-7 text-white" />}
+                        {pu.type === 'REVEAL' && <Eye className="w-7 h-7 text-white" />}
+                        {pu.type === 'MAGNET' && <Magnet className="w-7 h-7 text-white" />}
+                        {pu.type === 'SHUFFLE' && <Shuffle className="w-7 h-7 text-white" />}
                       </motion.button>
-                      <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-yellow-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter shadow-lg whitespace-nowrap">
-                        Lucky Box!
-                      </div>
-                    </motion.div>
-                  )}
 
-                  {players.find(p => p.id === 'host')?.powerUps.length! > 0 && (
-                    <motion.div 
-                      initial={{ y: 100, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      className="bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-[2rem] p-2 flex items-center gap-2 shadow-2xl"
-                    >
-                      {players.find(p => p.id === 'host')?.powerUps.map((pu) => (
-                        <div key={pu.id} className="relative">
-                          <motion.button
-                            whileHover={{ y: -5, scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg border border-white/10 transition-all relative group overflow-hidden"
-                            style={{ 
-                              background: `linear-gradient(135deg, ${
-                                pu.type === 'SCISSORS' ? '#4f46e5, #3730a3' : 
-                                pu.type === 'LIGHTNING' ? '#eab308, #ca8a04' : 
-                                pu.type === 'FIREBALL' ? '#ef4444, #b91c1c' : 
-                                pu.type === 'TORNADO' ? '#10b981, #047857' :
-                                pu.type === 'SHIELD' ? '#3b82f6, #1d4ed8' :
-                                pu.type === 'FREEZE' ? '#06b6d4, #0e7490' :
-                                pu.type === 'DOUBLE_POINTS' ? '#a855f7, #7e22ce' : 
-                                pu.type === 'TIME_WARP' ? '#6366f1, #4338ca' :
-                                pu.type === 'MIRROR' ? '#ec4899, #be185d' :
-                                pu.type === 'BOMB' ? '#27272a, #09090b' :
-                                pu.type === 'CLUE' ? '#84cc16, #4d7c0f' :
-                                pu.type === 'REVEAL' ? '#f59e0b, #b45309' :
-                                pu.type === 'MAGNET' ? '#64748b, #334155' :
-                                pu.type === 'BLACKOUT' ? '#18181b, #000000' :
-                                pu.type === 'POISON' ? '#166534, #064e3b' :
-                                pu.type === 'VAMPIRE' ? '#991b1b, #450a0a' :
-                                pu.type === 'GRAVITY' ? '#78350f, #451a03' :
-                                pu.type === 'INVERT' ? '#ffffff, #d1d5db' :
-                                pu.type === 'METEOR' ? '#f87171, #dc2626' :
-                                pu.type === 'HAMMER' ? '#78716c, #44403c' :
-                                pu.type === 'SHUFFLE' ? '#8b5cf6, #5b21b6' : '#f97316, #c2410c'
-                              })`
-                            }}
-                            onClick={() => {
-                              if (pu.type === 'SCISSORS') {
-                                useScissors(pu.id);
-                              } else if (pu.type === 'HAMMER') {
-                                useHammer(pu.id);
-                              } else if (['SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'MIRROR', 'CLUE', 'REVEAL', 'MAGNET', 'TIME_WARP', 'INVERT', 'GRAVITY', 'BLACKOUT', 'POISON'].includes(pu.type)) {
-                                usePowerUp(pu.id, 'host');
-                              } else {
-                                setShowTargetList(showTargetList === pu.id ? null : pu.id);
-                              }
-                            }}
-                          >
-                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            {pu.type === 'SCISSORS' && <Scissors className="w-6 h-6 text-white" />}
-                            {pu.type === 'LIGHTNING' && <Zap className="w-6 h-6 text-white" />}
-                            {pu.type === 'FIREBALL' && <Flame className="w-6 h-6 text-white" />}
-                            {pu.type === 'TORNADO' && <Wind className="w-6 h-6 text-white" />}
-                            {pu.type === 'SHIELD' && <Shield className="w-6 h-6 text-white" />}
-                            {pu.type === 'FREEZE' && <Snowflake className="w-6 h-6 text-white" />}
-                            {pu.type === 'DOUBLE_POINTS' && <TrendingUp className="w-6 h-6 text-white" />}
-                            {pu.type === 'THIEF' && <Hand className="w-6 h-6 text-white" />}
-                            {pu.type === 'TIME_WARP' && <RotateCcw className="w-6 h-6 text-white" />}
-                            {pu.type === 'MIRROR' && <RefreshCw className="w-6 h-6 text-white" />}
-                            {pu.type === 'BOMB' && <Bomb className="w-6 h-6 text-white" />}
-                            {pu.type === 'CLUE' && <Lightbulb className="w-6 h-6 text-white" />}
-                            {pu.type === 'REVEAL' && <Eye className="w-6 h-6 text-white" />}
-                            {pu.type === 'MAGNET' && <Magnet className="w-6 h-6 text-white" />}
-                            {pu.type === 'SHUFFLE' && <Shuffle className="w-6 h-6 text-white" />}
-                            {pu.type === 'BLACKOUT' && <Moon className="w-6 h-6 text-white" />}
-                            {pu.type === 'POISON' && <Skull className="w-6 h-6 text-white" />}
-                            {pu.type === 'VAMPIRE' && <Ghost className="w-6 h-6 text-white" />}
-                            {pu.type === 'GRAVITY' && <ArrowDownCircle className="w-6 h-6 text-white" />}
-                            {pu.type === 'INVERT' && <Contrast className="w-6 h-6 text-zinc-900" />}
-                            {pu.type === 'METEOR' && <CloudLightning className="w-6 h-6 text-white" />}
-                            {pu.type === 'HAMMER' && <Hammer className="w-6 h-6 text-white" />}
-                          </motion.button>
-
-                          {showTargetList === pu.id && (
-                            <motion.div 
-                              initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-zinc-900 border border-white/10 rounded-2xl p-2 shadow-2xl min-w-[180px] z-50"
-                            >
-                              <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2 px-3 flex items-center gap-2">
-                                <Target className="w-3 h-3 text-red-500" /> Select Target
-                              </div>
-                              <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-                                {players.map(p => (
-                                  <button
-                                    key={p.id}
-                                    onClick={() => usePowerUp(pu.id, p.id)}
-                                    className="w-full text-left px-3 py-2 rounded-xl text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
-                                  >
-                                    <span className="truncate font-medium">{p.name}</span>
-                                    {p.id === 'host' ? (
-                                      <span className="text-[8px] bg-white/10 px-1.5 py-0.5 rounded uppercase">You</span>
-                                    ) : (
-                                      <span className="text-[10px] text-zinc-500 font-mono">{p.score}</span>
-                                    )}
-                                  </button>
-                                ))}
-                              </div>
-                              <div className="absolute bottom-[-6px] left-1/2 -translate-x-1/2 w-3 h-3 bg-zinc-900 border-r border-b border-white/10 rotate-45" />
-                            </motion.div>
-                          )}
-                        </div>
-                      ))}
-                    </motion.div>
-                  )}
+                      {showTargetList === pu.id && (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.9, x: -10 }}
+                          animate={{ opacity: 1, scale: 1, x: 0 }}
+                          className="absolute right-16 bottom-0 bg-zinc-900 border border-white/10 rounded-xl p-2 shadow-2xl min-w-[150px]"
+                        >
+                          <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2 px-2 flex items-center gap-1">
+                            <Target className="w-3 h-3" /> Use on:
+                          </div>
+                          <div className="space-y-1">
+                            {players.map(p => (
+                              <button
+                                key={p.id}
+                                onClick={() => usePowerUp(pu.id, p.id)}
+                                className="w-full text-left px-3 py-1.5 rounded-lg text-sm hover:bg-white/5 transition-colors flex items-center justify-between group"
+                              >
+                                <span className="truncate">{p.name}</span>
+                                {p.id === 'host' && <span className="text-[8px] opacity-50 ml-1">You</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </div>
+                  ))}
                 </AnimatePresence>
               </div>
             )}
@@ -1616,67 +1412,6 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
               <span className="inline-block px-5 py-2 rounded-full bg-white/10 text-white/70 font-medium tracking-widest uppercase">
                 Question {currentQuestionIndex + 1} of {questions.length}
               </span>
-              
-              {/* Floating Player List during game */}
-              <div className="fixed left-6 top-1/2 -translate-y-1/2 z-40 hidden xl:flex flex-col gap-3 max-h-[80vh] overflow-y-auto pr-2 custom-scrollbar">
-                <AnimatePresence>
-                  {players.map(p => (
-                    <motion.div
-                      key={p.id}
-                      initial={{ x: -50, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      className={clsx(
-                        "bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-xl p-3 flex items-center gap-3 min-w-[200px] shadow-xl",
-                        p.hasAnswered ? "border-emerald-500/50" : "border-white/10"
-                      )}
-                    >
-                      <div className="relative">
-                        <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-bold">
-                          {p.name.charAt(0).toUpperCase()}
-                        </div>
-                        {p.hasAnswered && (
-                          <div className="absolute -top-1 -right-1 bg-emerald-500 text-white rounded-full p-0.5">
-                            <Check className="w-3 h-3" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium truncate text-sm">{p.name}</span>
-                          <span className="text-xs font-mono text-zinc-500">{p.score}</span>
-                        </div>
-                        {/* Active Effects */}
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {p.activeEffects.map((effect, idx) => {
-                            const timeLeft = Math.max(0, Math.ceil((effect.endTime - Date.now()) / 1000));
-                            if (timeLeft === 0) return null;
-                            return (
-                              <div key={idx} className="flex items-center gap-1 bg-white/5 px-1 py-0.5 rounded text-[8px] text-zinc-400 border border-white/5">
-                                {effect.type === 'SHIELD' && <Shield className="w-2 h-2 text-blue-400" />}
-                                {effect.type === 'FREEZE' && <Snowflake className="w-2 h-2 text-cyan-400" />}
-                                {effect.type === 'DOUBLE_POINTS' && <TrendingUp className="w-2 h-2 text-purple-400" />}
-                                {effect.type === 'LIGHTNING' && <Zap className="w-2 h-2 text-yellow-400" />}
-                                {effect.type === 'FIREBALL' && <Flame className="w-2 h-2 text-orange-400" />}
-                                {effect.type === 'TORNADO' && <Wind className="w-2 h-2 text-emerald-400" />}
-                                {effect.type === 'MIRROR' && <RefreshCw className="w-2 h-2 text-pink-400" />}
-                                {effect.type === 'CLUE' && <Lightbulb className="w-2 h-2 text-lime-400" />}
-                                {effect.type === 'MAGNET' && <Magnet className="w-2 h-2 text-slate-400" />}
-                                {effect.type === 'BLACKOUT' && <Moon className="w-2 h-2 text-zinc-600" />}
-                                {effect.type === 'POISON' && <Skull className="w-2 h-2 text-green-500" />}
-                                {effect.type === 'GRAVITY' && <ArrowDownCircle className="w-2 h-2 text-amber-700" />}
-                                {effect.type === 'INVERT' && <Contrast className="w-2 h-2 text-white" />}
-                                {effect.type === 'BOMB' && <Bomb className="w-2 h-2 text-red-500" />}
-                                <span>{timeLeft}s</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-
               <div className={clsx(
                 "w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold border-4 shadow-xl relative",
                 timeLeft <= 5 ? "border-red-500 text-red-500 bg-red-500/10 animate-pulse" : "border-indigo-500 text-indigo-400 bg-indigo-500/10"
@@ -1695,16 +1430,6 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
             </div>
 
             <div className="w-full bg-zinc-900 border border-white/10 rounded-[3rem] p-10 md:p-16 shadow-2xl mb-8 relative overflow-hidden">
-              {/* Screen Shake Effect for Fireball/Meteor */}
-              {(players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) || 
-                players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'METEOR' && e.endTime > Date.now())) && (
-                <motion.div 
-                  animate={{ x: [-2, 2, -2, 2, 0], y: [-2, 2, 2, -2, 0] }}
-                  transition={{ repeat: Infinity, duration: 0.1 }}
-                  className="absolute inset-0 pointer-events-none z-0"
-                />
-              )}
-
               {/* Lightning Effect */}
               {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'LIGHTNING' && e.endTime > Date.now()) && (
                 <div className="absolute inset-0 bg-zinc-950 z-10 flex flex-col items-center justify-center text-yellow-400 animate-pulse">
@@ -1758,110 +1483,12 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                 </div>
               )}
 
-              {/* Blackout Effect */}
-              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'BLACKOUT' && e.endTime > Date.now()) && (
-                <div className="absolute inset-0 z-40 pointer-events-none bg-black flex items-center justify-center rounded-[3rem]">
-                  <Moon className="w-20 h-20 text-zinc-800 animate-pulse" />
-                </div>
-              )}
-
-              {/* Invert Effect */}
-              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'INVERT' && e.endTime > Date.now()) && (
-                <div className="absolute inset-0 z-50 pointer-events-none backdrop-invert rounded-[3rem]" />
-              )}
-
-              {/* Gravity Effect */}
-              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'GRAVITY' && e.endTime > Date.now()) && (
-                <motion.div 
-                  animate={{ y: [0, 20, 0] }}
-                  transition={{ repeat: Infinity, duration: 0.5 }}
-                  className="absolute inset-0 z-10 pointer-events-none border-b-8 border-zinc-500/30 rounded-[3rem]"
-                />
-              )}
-
-              {/* Poison Effect */}
-              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'POISON' && e.endTime > Date.now()) && (
-                <div className="absolute inset-0 z-10 pointer-events-none bg-green-900/10 rounded-[3rem]">
-                  <div className="absolute top-4 left-1/2 -translate-x-1/2 text-green-500 animate-bounce">
-                    <Skull className="w-8 h-8" />
-                  </div>
-                </div>
-              )}
-
               {/* Bomb Effect */}
               {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'BOMB' && e.endTime > Date.now()) && (
                 <div className="absolute inset-0 z-10 pointer-events-none bg-red-900/10 rounded-[3rem]">
                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-ping">
                     <Bomb className="w-32 h-32" />
                   </div>
-                </div>
-              )}
-
-              {/* Fireball Effect Reworked */}
-              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) && (
-                <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
-                  <div className="absolute inset-0 bg-gradient-to-t from-orange-600/40 via-transparent to-transparent mix-blend-overlay" />
-                  <AnimatePresence>
-                    {[...Array(15)].map((_, i) => (
-                      <motion.div
-                        key={i}
-                        initial={{ y: 600, x: Math.random() * 100 + '%', opacity: 0, scale: 0.5 }}
-                        animate={{ 
-                          y: -200, 
-                          x: (Math.random() * 100) + '%',
-                          opacity: [0, 1, 1, 0],
-                          scale: [0.5, 1.5, 1, 0.5],
-                          rotate: Math.random() * 360
-                        }}
-                        transition={{ 
-                          duration: 1.5 + Math.random(), 
-                          repeat: Infinity, 
-                          delay: i * 0.1,
-                          ease: "easeOut"
-                        }}
-                        className="absolute bottom-0 text-orange-500 blur-[2px]"
-                      >
-                        <Flame className="w-24 h-24" />
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                  <motion.div 
-                    animate={{ opacity: [0.1, 0.3, 0.1] }}
-                    transition={{ repeat: Infinity, duration: 0.5 }}
-                    className="absolute inset-0 bg-orange-500/10"
-                  />
-                </div>
-              )}
-
-              {/* Tornado Effect Reworked */}
-              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'TORNADO' && e.endTime > Date.now()) && (
-                <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
-                  <motion.div 
-                    animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                    className="absolute inset-[-50%] border-[40px] border-dashed border-emerald-500/10 rounded-full blur-3xl"
-                  />
-                  {[...Array(8)].map((_, i) => (
-                    <motion.div
-                      key={i}
-                      animate={{ 
-                        rotate: 360,
-                        scale: [1, 1.2, 1],
-                        x: [0, 20, -20, 0],
-                        y: [0, -20, 20, 0]
-                      }}
-                      transition={{ 
-                        rotate: { repeat: Infinity, duration: 3, ease: "linear", delay: i * 0.4 },
-                        scale: { repeat: Infinity, duration: 2 },
-                        x: { repeat: Infinity, duration: 4 },
-                        y: { repeat: Infinity, duration: 5 }
-                      }}
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-emerald-400/20"
-                      style={{ width: `${(i + 1) * 15}%`, height: `${(i + 1) * 15}%` }}
-                    >
-                      <Wind className="w-full h-full" />
-                    </motion.div>
-                  ))}
                 </div>
               )}
 
@@ -1892,6 +1519,25 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
             )}
 
             <div className="w-full grid md:grid-cols-2 gap-6 mb-12 relative">
+              {/* Fireball Effect */}
+              {players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) && (
+                <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
+                  <div className="absolute inset-0 bg-orange-600/20 mix-blend-overlay" />
+                  {[...Array(10)].map((_, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ y: 500, opacity: 0 }}
+                      animate={{ y: -500, opacity: [0, 1, 0] }}
+                      transition={{ duration: 2, repeat: Infinity, delay: i * 0.2 }}
+                      className="absolute bottom-0 text-orange-500"
+                      style={{ left: `${i * 10}%` }}
+                    >
+                      <Flame className="w-20 h-20" />
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+
               {(players.find(p => p.id === 'host')?.activeEffects.some(e => e.type === 'TORNADO' && e.endTime > Date.now()) 
                 ? shuffledOptions 
                 : questions[currentQuestionIndex].options
@@ -1938,9 +1584,9 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
 
                   setPlayers(prev => prev.map(p => {
                     if (p.id === 'host') {
-                      // Guaranteed lucky block for host on correct answer in NORMAL mode (only if chaosMode is on)
-                      if (isCorrect && settingsRef.current.examType === 'NORMAL' && settingsRef.current.chaosMode) {
-                        const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF', 'TIME_WARP', 'MIRROR', 'BOMB', 'CLUE', 'REVEAL', 'MAGNET', 'SHUFFLE', 'BLACKOUT', 'POISON', 'VAMPIRE', 'GRAVITY', 'INVERT', 'METEOR', 'HAMMER'];
+                      // Chance for lucky block for host
+                      if (isCorrect && settingsRef.current.examType === 'NORMAL' && Math.random() < 0.3) {
+                        const powerUpTypes: PowerUpType[] = ['SCISSORS', 'LIGHTNING', 'FIREBALL', 'TORNADO', 'SHIELD', 'FREEZE', 'DOUBLE_POINTS', 'THIEF'];
                         const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
                         const powerUp: PowerUp = { id: Math.random().toString(36).substr(2, 9), type };
                         setPendingPowerUp(powerUp);
@@ -1949,7 +1595,7 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                       const newActiveEffects = isCorrect && hasDoublePoints 
                         ? p.activeEffects.filter(e => e.type !== 'DOUBLE_POINTS')
                         : p.activeEffects;
-                      return { ...p, hasAnswered: true, currentAnswer: opt, score: p.score + points, activeEffects: newActiveEffects, correctCount: p.correctCount + (isCorrect ? 1 : 0) };
+                      return { ...p, hasAnswered: true, currentAnswer: opt, score: p.score + points, activeEffects: newActiveEffects };
                     }
                     return p;
                   }));
@@ -2008,7 +1654,7 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                   onClick={nextPhase}
                   className="bg-white text-black px-8 py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors"
                 >
-                  {settings.examType === 'NORMAL' && players.length > 0 && players.every(p => p.hasAnswered) ? 'Next (Auto)' : 'Next'}
+                  Next
                 </button>
               )}
             </div>
@@ -2246,13 +1892,13 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
               Leaderboard
             </h2>
             
-            <div className="space-y-4 mb-12 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
-              {players.sort((a, b) => b.score - a.score).map((p, i) => (
+            <div className="space-y-4 mb-12">
+              {players.sort((a, b) => b.score - a.score).slice(0, 5).map((p, i) => (
                 <motion.div
                   key={p.id}
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: i * 0.1 }}
                   className="bg-zinc-900 border border-white/10 rounded-2xl p-6 flex items-center justify-between"
                 >
                   <div className="flex items-center gap-6">
@@ -2267,14 +1913,7 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                     </div>
                     <span className="text-2xl font-bold">{p.name}</span>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <div className="text-2xl font-mono text-indigo-400 leading-none">{p.score}</div>
-                      <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter mt-1">
-                        {p.correctCount} Correct
-                      </div>
-                    </div>
-                  </div>
+                  <span className="text-2xl font-mono text-indigo-400">{p.score}</span>
                 </motion.div>
               ))}
             </div>
@@ -2292,54 +1931,26 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                 onClick={nextPhase}
                 className="bg-white text-black px-12 py-4 rounded-xl font-bold text-lg hover:bg-zinc-200 transition-colors"
               >
-                {settings.examType === 'QUICK' ? 'Finish Game' : (currentQuestionIndex + 1 < questions.length ? (settings.examType === 'NORMAL' && players.length > 0 && players.every(p => p.hasAnswered) ? 'Next Question (Auto)' : 'Next Question') : 'Finish Game')}
+                {settings.examType === 'QUICK' ? 'Finish Game' : (currentQuestionIndex + 1 < questions.length ? 'Next Question' : 'Finish Game')}
               </button>
             </div>
           </div>
         )}
 
         {gameState === 'FINISHED' && (
-          <div className="w-full max-w-2xl">
-            <div className="text-center mb-12">
-              <Trophy className="w-24 h-24 text-yellow-400 mx-auto mb-8" />
-              <h2 className="text-5xl font-bold mb-4">Game Over!</h2>
-              <p className="text-xl text-zinc-400">Final Standings</p>
-            </div>
+          <div className="text-center">
+            <Trophy className="w-24 h-24 text-yellow-400 mx-auto mb-8" />
+            <h2 className="text-5xl font-bold mb-4">Game Over!</h2>
+            <p className="text-xl text-zinc-400 mb-12">Thanks for playing</p>
             
-            <div className="space-y-4 mb-12 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
-              {players.sort((a, b) => b.score - a.score).map((p, i) => (
-                <motion.div
-                  key={p.id}
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: i * 0.05 }}
-                  className={clsx(
-                    "bg-zinc-900 border border-white/10 rounded-2xl p-6 flex items-center justify-between",
-                    i === 0 && "ring-2 ring-yellow-500/50 bg-yellow-500/5"
-                  )}
-                >
-                  <div className="flex items-center gap-6">
-                    <div className={clsx(
-                      "w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg",
-                      i === 0 ? "bg-yellow-500/20 text-yellow-400" :
-                      i === 1 ? "bg-zinc-300/20 text-zinc-300" :
-                      i === 2 ? "bg-amber-700/20 text-amber-600" :
-                      "bg-zinc-800 text-zinc-500"
-                    )}>
-                      {i + 1}
-                    </div>
-                    <span className="text-2xl font-bold">{p.name}</span>
-                  </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <div className="text-2xl font-mono text-indigo-400 leading-none">{p.score}</div>
-                      <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter mt-1">
-                        {p.correctCount} Correct
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
+            <div className="bg-zinc-900 border border-white/10 rounded-3xl p-8 max-w-md mx-auto mb-12">
+              <div className="text-sm text-zinc-500 uppercase tracking-widest mb-2">Winner</div>
+              <div className="text-4xl font-bold text-white mb-2">
+                {players.sort((a, b) => b.score - a.score)[0]?.name || 'No one'}
+              </div>
+              <div className="text-indigo-400 font-mono text-xl">
+                {players.sort((a, b) => b.score - a.score)[0]?.score || 0} pts
+              </div>
             </div>
 
             <div className="flex justify-center gap-4">
@@ -2452,100 +2063,6 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
           </div>
         </div>
       )}
-
-      {/* Info Modal */}
-      <AnimatePresence>
-        {showInfoModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowInfoModal(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative w-full max-w-4xl max-h-[90vh] bg-zinc-900 border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col"
-            >
-              <div className="p-8 border-b border-white/5 flex items-center justify-between bg-zinc-900/50 backdrop-blur-md sticky top-0 z-10">
-                <div>
-                  <h2 className="text-3xl font-bold flex items-center gap-3">
-                    <Info className="w-8 h-8 text-indigo-500" /> Game Guide
-                  </h2>
-                  <p className="text-zinc-500 text-sm mt-1">Learn about Chaos Mode and Power-ups</p>
-                </div>
-                <button 
-                  onClick={() => setShowInfoModal(false)}
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors text-zinc-400 hover:text-white"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                <section className="mb-12">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-orange-500/20 rounded-xl">
-                      <Flame className="w-6 h-6 text-orange-500" />
-                    </div>
-                    <h3 className="text-xl font-bold text-orange-400 uppercase tracking-wider">Chaos Mode</h3>
-                  </div>
-                  <div className="bg-white/5 border border-white/5 rounded-3xl p-6">
-                    <p className="text-zinc-300 leading-relaxed">
-                      Chaos Mode is an unpredictable game variant where players earn <span className="text-yellow-500 font-bold">Lucky Boxes</span> by answering questions correctly. 
-                      These boxes contain powerful items that can be used to boost your own performance or sabotage your opponents. 
-                      Strategic use of power-ups is the key to victory!
-                    </p>
-                  </div>
-                </section>
-
-                <section>
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2 bg-indigo-500/20 rounded-xl">
-                      <Box className="w-6 h-6 text-indigo-500" />
-                    </div>
-                    <h3 className="text-xl font-bold text-indigo-400 uppercase tracking-wider">Power-ups Library</h3>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {POWER_UPS_INFO.map((info) => (
-                      <div 
-                        key={info.type}
-                        className="flex items-start gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-colors group"
-                      >
-                        <div 
-                          className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg"
-                          style={{ 
-                            background: `linear-gradient(135deg, ${info.color}, ${info.color}88)`
-                          }}
-                        >
-                          {React.cloneElement(info.icon as React.ReactElement, { className: "w-6 h-6 text-white" })}
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-white group-hover:text-indigo-400 transition-colors">{info.name}</h4>
-                          <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{info.description}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
-
-              <div className="p-6 bg-zinc-950/50 border-t border-white/5 text-center">
-                <button 
-                  onClick={() => setShowInfoModal(false)}
-                  className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg"
-                >
-                  Got it!
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
-};
+}

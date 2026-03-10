@@ -21,7 +21,7 @@ export type Question = {
   explanation?: string;
 };
 
-export type PowerUpType = 'SCISSORS' | 'LIGHTNING' | 'FIREBALL' | 'TORNADO' | 'SHIELD' | 'FREEZE' | 'DOUBLE_POINTS' | 'THIEF' | 'TIME_WARP' | 'MIRROR' | 'BOMB' | 'CLUE' | 'REVEAL' | 'MAGNET' | 'SHUFFLE' | 'BLACKOUT' | 'POISON' | 'VAMPIRE' | 'GRAVITY' | 'INVERT' | 'METEOR' | 'HAMMER';
+export type PowerUpType = 'SCISSORS' | 'LIGHTNING' | 'FIREBALL' | 'TORNADO' | 'SHIELD' | 'FREEZE' | 'DOUBLE_POINTS' | 'THIEF' | 'TIME_WARP' | 'MIRROR' | 'BOMB' | 'CLUE' | 'REVEAL' | 'MAGNET' | 'SHUFFLE' | 'GHOST' | 'JACKPOT' | 'SLOW_MO' | 'COPYCAT';
 
 export type PowerUp = {
   id: string;
@@ -43,8 +43,6 @@ export type Player = {
   timeTaken?: number; // For QUICK mode
   powerUps: PowerUp[];
   activeEffects: ActiveEffect[];
-  correctCount: number;
-  isReady?: boolean;
 };
 
 export type GameState = 'LOBBY' | 'STARTING' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED' | 'QUICK_EXAM';
@@ -64,10 +62,9 @@ export type MessageType =
   | { type: 'SUBMIT_ANSWER'; answer: string }
   | { type: 'SUBMIT_EXAM'; answers: Record<string, string>; timeTaken: number }
   | { type: 'ANSWER_RESULT'; correct: boolean; score: number; correctAnswer: string; explanation?: string }
-  | { type: 'PLAYER_LIST'; players: { id: string; name: string; score: number; timeTaken?: number; isReady?: boolean }[] }
+  | { type: 'PLAYER_LIST'; players: { id: string; name: string; score: number; timeTaken?: number }[] }
   | { type: 'CHAT_MESSAGE'; message: ChatMessage }
   | { type: 'GIVE_POWER_UP'; powerUp: PowerUp }
   | { type: 'USE_POWER_UP'; powerUpId: string; targetId: string }
   | { type: 'APPLY_EFFECT'; effect: PowerUpType }
-  | { type: 'NEW_ROUND' }
-  | { type: 'PLAYER_READY'; ready: boolean };
+  | { type: 'NEW_ROUND' };
