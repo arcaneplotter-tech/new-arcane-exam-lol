@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Peer, DataConnection } from 'peerjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle, Moon, Skull, Ghost, ArrowDownCircle, Contrast, CloudLightning, Hammer, Info, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Loader2, Trophy, AlertCircle, Timer, MessageSquare, Send, Scissors, Zap, Flame, Wind, Box, Target, Shield, Snowflake, TrendingUp, Hand, RotateCcw, RefreshCw, Bomb, Lightbulb, Eye, Magnet, Shuffle, Moon, Skull, Ghost, ArrowDownCircle, Contrast, CloudLightning, Hammer, Info, X, Users } from 'lucide-react';
 import { GameState, MessageType, ChatMessage, PowerUp, PowerUpType, ActiveEffect } from '../types';
 import { clsx } from 'clsx';
 import { POWER_UPS_INFO } from '../constants/powerUps';
@@ -34,6 +34,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
   const [quickTimeLeft, setQuickTimeLeft] = useState(0);
   const [quickSubmitted, setQuickSubmitted] = useState(false);
   const [quickTotalTime, setQuickTotalTime] = useState(0);
+  const [questionTimeLeft, setQuestionTimeLeft] = useState(0);
   const [showReview, setShowReview] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -46,17 +47,33 @@ export function PlayerView({ onBack }: PlayerViewProps) {
   const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
   const [scissorsUsed, setScissorsUsed] = useState(false);
   const [hammerUsed, setHammerUsed] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   const peerRef = useRef<Peer | null>(null);
   const quickTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const questionTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleReady = () => {
+    const newReadyState = !isReady;
+    setIsReady(newReadyState);
+    if (connection && connection.open) {
+      connection.send({ type: 'PLAYER_READY', ready: newReadyState });
+    }
+  };
 
   useEffect(() => {
     const peer = new Peer();
     peerRef.current = peer;
 
+    peer.on('disconnected', () => {
+      console.log('Peer disconnected, attempting to reconnect...');
+      peer.reconnect();
+    });
+
     return () => {
       peer.destroy();
       if (quickTimerRef.current) clearInterval(quickTimerRef.current);
+      if (questionTimerRef.current) clearInterval(questionTimerRef.current);
     };
   }, []);
 
@@ -117,6 +134,12 @@ export function PlayerView({ onBack }: PlayerViewProps) {
         setShuffledOptions([...data.data.question.options]);
         setScissorsUsed(false);
         setHammerUsed(false);
+        
+        setQuestionTimeLeft(data.data.question.timeLimit);
+        if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+        questionTimerRef.current = setInterval(() => {
+          setQuestionTimeLeft(prev => Math.max(0, prev - 1));
+        }, 1000);
       }
       if (data.state === 'QUICK_EXAM') {
         setQuickQuestions(data.data.questions);
@@ -177,6 +200,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
     }
 
     if (data.type === 'ANSWER_RESULT') {
+      if (questionTimerRef.current) clearInterval(questionTimerRef.current);
       setAnswerResult({
         correct: data.correct,
         score: data.score,
@@ -375,10 +399,28 @@ export function PlayerView({ onBack }: PlayerViewProps) {
             </form>
           </motion.div>
         ) : (
-          <div className="w-full max-w-4xl flex flex-col items-center justify-center h-full">
+          <div className="w-full max-w-4xl flex flex-col items-center justify-center h-full relative">
+            {(gameState === 'LOBBY' || gameState === 'STARTING') && settings?.chaosMode && (
+              <div className="absolute top-4 left-4 z-50 flex items-center gap-2">
+                <motion.div 
+                  animate={{ scale: [1, 1.1, 1] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                  className="bg-orange-600/90 border border-orange-500/50 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-2 shadow-[0_0_15px_rgba(234,88,12,0.3)] whitespace-nowrap"
+                >
+                  <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
+                </motion.div>
+                <button 
+                  onClick={() => setShowInfoModal(true)}
+                  className="bg-zinc-800/80 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white p-1.5 rounded-full transition-colors shadow-lg"
+                  title="Game Info"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             {gameState === 'LOBBY' && (
               <div className="w-full max-w-2xl flex flex-col items-center">
-                <div className="text-center mb-12">
+                <div className="text-center mb-8">
                   <h2 className="text-4xl font-bold mb-4">You're in!</h2>
                   <p className="text-xl text-zinc-400 flex items-center justify-center gap-3">
                     <Loader2 className="w-6 h-6 animate-spin" />
@@ -386,13 +428,62 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                   </p>
                 </div>
 
-                <div className="w-full bg-zinc-900 border border-white/10 rounded-3xl p-6 flex flex-col h-[400px]">
-                  <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
-                    <MessageSquare className="w-5 h-5 text-indigo-400" />
-                    Lobby Chat
-                  </h3>
-                  
-                  <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2 custom-scrollbar flex flex-col-reverse">
+                <div className="mb-8 w-full flex justify-center">
+                  <button
+                    onClick={handleReady}
+                    className={clsx(
+                      "px-12 py-4 rounded-2xl font-bold text-xl transition-all duration-300 transform hover:scale-105 shadow-xl flex items-center gap-3",
+                      isReady 
+                        ? "bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20" 
+                        : "bg-white hover:bg-zinc-200 text-black shadow-white/10"
+                    )}
+                  >
+                    {isReady ? (
+                      <>
+                        <CheckCircle2 className="w-6 h-6" />
+                        Ready!
+                      </>
+                    ) : (
+                      "Click when ready"
+                    )}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mb-8">
+                  <div className="w-full bg-zinc-900 border border-white/10 rounded-3xl p-6 flex flex-col h-[400px]">
+                    <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
+                      <Users className="w-5 h-5 text-indigo-400" />
+                      Players ({players.length})
+                    </h3>
+                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                      {players.map(p => (
+                        <div key={p.id} className="bg-zinc-800/50 border border-white/5 rounded-lg p-3 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-bold">
+                              {p.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-medium">{p.name}</span>
+                            {p.id === 'host' && <span className="text-[8px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider">Host</span>}
+                          </div>
+                          {p.id !== 'host' && (
+                            p.isReady ? (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                            ) : (
+                              <Loader2 className="w-5 h-5 text-zinc-500 animate-spin" />
+                            )
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="w-full bg-zinc-900 border border-white/10 rounded-3xl p-6 flex flex-col h-[400px]">
+                    <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
+                      <MessageSquare className="w-5 h-5 text-indigo-400" />
+                      Lobby Chat
+                    </h3>
+                    
+                    <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2 custom-scrollbar flex flex-col-reverse">
                     <div className="space-y-3">
                       {messages.length === 0 ? (
                         <div className="text-center py-4 text-zinc-600 text-sm italic">
@@ -422,22 +513,23 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Type a message..." 
-                      value={chatInput}
-                      onChange={e => setChatInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
-                      className="flex-1 bg-zinc-950 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                    />
-                    <button 
-                      onClick={sendChatMessage}
-                      disabled={!chatInput.trim()}
-                      className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-colors"
-                    >
-                      <Send className="w-5 h-5" />
-                    </button>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Type a message..." 
+                        value={chatInput}
+                        onChange={e => setChatInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
+                        className="flex-1 bg-zinc-950 border border-white/10 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                      <button 
+                        onClick={sendChatMessage}
+                        disabled={!chatInput.trim()}
+                        className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+                      >
+                        <Send className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -581,25 +673,168 @@ export function PlayerView({ onBack }: PlayerViewProps) {
             )}
 
             {gameState === 'QUESTION' && currentQuestion && !answerResult && (
-              <div className="w-full h-full flex flex-col max-w-5xl mx-auto relative pb-32 md:pb-8">
+              <div className="fixed inset-0 z-40 bg-slate-50 flex flex-col overflow-hidden">
                 {settings?.chaosMode && (
-                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+                  <div className="absolute top-4 left-4 z-50 flex items-center gap-2">
                     <motion.div 
                       animate={{ scale: [1, 1.1, 1] }}
                       transition={{ repeat: Infinity, duration: 2 }}
-                      className="bg-orange-600/20 border border-orange-500/50 text-orange-400 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-2 shadow-[0_0_15px_rgba(234,88,12,0.3)] whitespace-nowrap"
+                      className="bg-orange-600/90 border border-orange-500/50 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-2 shadow-[0_0_15px_rgba(234,88,12,0.3)] whitespace-nowrap"
                     >
                       <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
                     </motion.div>
                     <button 
                       onClick={() => setShowInfoModal(true)}
-                      className="bg-zinc-900/80 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white p-1.5 rounded-full transition-colors shadow-lg"
+                      className="bg-white/20 backdrop-blur-md border border-white/30 text-white hover:bg-white/30 p-1.5 rounded-full transition-colors shadow-lg"
                       title="Game Info"
                     >
                       <Info className="w-4 h-4" />
                     </button>
                   </div>
                 )}
+                
+                {/* Blue Top Section */}
+                <div className="relative bg-blue-600 pt-16 pb-20 px-6 rounded-b-[2.5rem] shadow-lg flex-shrink-0">
+                  {/* Progress Indicator */}
+                  <div className="flex justify-center items-center gap-2 mb-8">
+                    {Array.from({ length: totalQuestions }).map((_, i) => (
+                      <div key={i} className="flex items-center justify-center w-6 h-6">
+                        {i < currentQuestionIndex ? (
+                          <CheckCircle2 className="w-4 h-4 text-white" />
+                        ) : i === currentQuestionIndex ? (
+                          <div className="w-2 h-2 bg-white rounded-full" />
+                        ) : (
+                          <div className="w-1.5 h-1.5 bg-white/30 rounded-full" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="relative">
+                    {/* Screen Shake Effect for Fireball/Meteor */}
+                    {(activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) || 
+                      activeEffects.some(e => e.type === 'METEOR' && e.endTime > Date.now())) && (
+                      <motion.div 
+                        animate={{ x: [-2, 2, -2, 2, 0], y: [-2, 2, 2, -2, 0] }}
+                        transition={{ repeat: Infinity, duration: 0.1 }}
+                        className="absolute inset-0 pointer-events-none z-0"
+                      />
+                    )}
+                    {/* Lightning Effect */}
+                    {activeEffects.some(e => e.type === 'LIGHTNING' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 bg-slate-900 z-10 flex flex-col items-center justify-center text-yellow-400 animate-pulse rounded-2xl">
+                        <Zap className="w-12 h-12 mb-2" />
+                        <h3 className="text-lg font-bold uppercase tracking-widest">Blinded!</h3>
+                      </div>
+                    )}
+
+                    {/* Freeze Effect */}
+                    {activeEffects.some(e => e.type === 'FREEZE' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 bg-cyan-500/10 z-10 pointer-events-none border-4 border-cyan-400/30 rounded-2xl backdrop-blur-[1px]">
+                        <div className="absolute top-2 right-2 text-cyan-400 animate-pulse">
+                          <Snowflake className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Shield Effect */}
+                    {activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none border-4 border-blue-400/50 rounded-2xl shadow-[inset_0_0_30px_rgba(59,130,246,0.2)]">
+                        <div className="absolute top-2 left-2 text-blue-300">
+                          <Shield className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mirror Effect */}
+                    {activeEffects.some(e => e.type === 'MIRROR' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none border-4 border-pink-500/50 rounded-2xl shadow-[inset_0_0_30px_rgba(236,72,153,0.2)]">
+                        <div className="absolute bottom-2 right-2 text-pink-400 animate-spin-slow">
+                          <RefreshCw className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Magnet Effect */}
+                    {activeEffects.some(e => e.type === 'MAGNET' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none">
+                        <div className="absolute top-2 right-10 text-slate-300 animate-bounce">
+                          <Magnet className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Clue Effect */}
+                    {activeEffects.some(e => e.type === 'CLUE' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none bg-lime-500/5">
+                        <div className="absolute bottom-2 left-2 text-lime-400">
+                          <Lightbulb className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Blackout Effect */}
+                    {activeEffects.some(e => e.type === 'BLACKOUT' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-40 pointer-events-none bg-black flex items-center justify-center">
+                        <Moon className="w-20 h-20 text-zinc-800 animate-pulse" />
+                      </div>
+                    )}
+
+                    {/* Invert Effect */}
+                    {activeEffects.some(e => e.type === 'INVERT' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-50 pointer-events-none backdrop-invert" />
+                    )}
+
+                    {/* Gravity Effect */}
+                    {activeEffects.some(e => e.type === 'GRAVITY' && e.endTime > Date.now()) && (
+                      <motion.div 
+                        animate={{ y: [0, 20, 0] }}
+                        transition={{ repeat: Infinity, duration: 0.5 }}
+                        className="absolute inset-0 z-10 pointer-events-none border-b-8 border-slate-500/30"
+                      />
+                    )}
+
+                    {/* Poison Effect */}
+                    {activeEffects.some(e => e.type === 'POISON' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none bg-green-900/10">
+                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-green-400 animate-bounce">
+                          <Skull className="w-6 h-6" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bomb Effect */}
+                    {activeEffects.some(e => e.type === 'BOMB' && e.endTime > Date.now()) && (
+                      <div className="absolute inset-0 z-10 pointer-events-none bg-red-900/10 rounded-2xl">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-500 animate-ping">
+                          <Bomb className="w-20 h-20" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Double Points Indicator */}
+                    {activeEffects.some(e => e.type === 'DOUBLE_POINTS' && e.endTime > Date.now()) && (
+                      <motion.div 
+                        initial={{ scale: 0, y: -20 }}
+                        animate={{ scale: 1, y: 0 }}
+                        className="absolute -top-8 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-2 z-30"
+                      >
+                        <TrendingUp className="w-4 h-4" /> 2X POINTS ACTIVE
+                      </motion.div>
+                    )}
+
+                    <h2 className="text-white text-xl md:text-3xl font-bold text-center leading-snug max-w-3xl mx-auto">
+                      {currentQuestion.text}
+                    </h2>
+                  </div>
+                  
+                  {/* Timer overlapping */}
+                  <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md border-4 border-slate-50 text-blue-600 font-bold text-sm">
+                    <Timer className="w-4 h-4 mr-1 opacity-50" />
+                    {questionTimeLeft}
+                  </div>
+                </div>
+
                 {/* Power-ups UI for Player */}
                 <div className="fixed bottom-6 left-0 right-0 z-50 px-4 pointer-events-none">
                   <div className="max-w-md mx-auto flex items-center justify-center gap-3 pointer-events-auto">
@@ -743,132 +978,13 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                   </div>
                 </div>
 
-                <div className="text-center mb-12">
-                  <span className="inline-block px-4 py-1.5 rounded-full bg-white/10 text-white/70 font-medium text-sm mb-6 tracking-widest uppercase">
-                    Question {currentQuestionIndex + 1} of {totalQuestions}
-                  </span>
-                  <div className="relative">
-                    {/* Screen Shake Effect for Fireball/Meteor */}
-                    {(activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) || 
-                      activeEffects.some(e => e.type === 'METEOR' && e.endTime > Date.now())) && (
-                      <motion.div 
-                        animate={{ x: [-2, 2, -2, 2, 0], y: [-2, 2, 2, -2, 0] }}
-                        transition={{ repeat: Infinity, duration: 0.1 }}
-                        className="absolute inset-0 pointer-events-none z-0"
-                      />
-                    )}
-                    {/* Lightning Effect */}
-                    {activeEffects.some(e => e.type === 'LIGHTNING' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 bg-zinc-950 z-10 flex flex-col items-center justify-center text-yellow-400 animate-pulse rounded-2xl">
-                        <Zap className="w-12 h-12 mb-2" />
-                        <h3 className="text-lg font-bold uppercase tracking-widest">Blinded!</h3>
-                      </div>
-                    )}
 
-                    {/* Freeze Effect */}
-                    {activeEffects.some(e => e.type === 'FREEZE' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 bg-cyan-500/10 z-10 pointer-events-none border-4 border-cyan-400/30 rounded-2xl backdrop-blur-[1px]">
-                        <div className="absolute top-2 right-2 text-cyan-400 animate-pulse">
-                          <Snowflake className="w-6 h-6" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Shield Effect */}
-                    {activeEffects.some(e => e.type === 'SHIELD' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-10 pointer-events-none border-4 border-blue-500/50 rounded-2xl shadow-[inset_0_0_30px_rgba(59,130,246,0.2)]">
-                        <div className="absolute top-2 left-2 text-blue-400">
-                          <Shield className="w-6 h-6" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Mirror Effect */}
-                    {activeEffects.some(e => e.type === 'MIRROR' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-10 pointer-events-none border-4 border-pink-500/50 rounded-2xl shadow-[inset_0_0_30px_rgba(236,72,153,0.2)]">
-                        <div className="absolute bottom-2 right-2 text-pink-400 animate-spin-slow">
-                          <RefreshCw className="w-6 h-6" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Magnet Effect */}
-                    {activeEffects.some(e => e.type === 'MAGNET' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-10 pointer-events-none">
-                        <div className="absolute top-2 right-10 text-slate-400 animate-bounce">
-                          <Magnet className="w-6 h-6" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Clue Effect */}
-                    {activeEffects.some(e => e.type === 'CLUE' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-10 pointer-events-none bg-lime-500/5">
-                        <div className="absolute bottom-2 left-2 text-lime-400">
-                          <Lightbulb className="w-6 h-6" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Blackout Effect */}
-                    {activeEffects.some(e => e.type === 'BLACKOUT' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-40 pointer-events-none bg-black flex items-center justify-center">
-                        <Moon className="w-20 h-20 text-zinc-800 animate-pulse" />
-                      </div>
-                    )}
-
-                    {/* Invert Effect */}
-                    {activeEffects.some(e => e.type === 'INVERT' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-50 pointer-events-none backdrop-invert" />
-                    )}
-
-                    {/* Gravity Effect */}
-                    {activeEffects.some(e => e.type === 'GRAVITY' && e.endTime > Date.now()) && (
-                      <motion.div 
-                        animate={{ y: [0, 20, 0] }}
-                        transition={{ repeat: Infinity, duration: 0.5 }}
-                        className="absolute inset-0 z-10 pointer-events-none border-b-8 border-zinc-500/30"
-                      />
-                    )}
-
-                    {/* Poison Effect */}
-                    {activeEffects.some(e => e.type === 'POISON' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-10 pointer-events-none bg-green-900/10">
-                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-green-500 animate-bounce">
-                          <Skull className="w-6 h-6" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Bomb Effect */}
-                    {activeEffects.some(e => e.type === 'BOMB' && e.endTime > Date.now()) && (
-                      <div className="absolute inset-0 z-10 pointer-events-none bg-red-900/10 rounded-2xl">
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-ping">
-                          <Bomb className="w-20 h-20" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Double Points Indicator */}
-                    {activeEffects.some(e => e.type === 'DOUBLE_POINTS' && e.endTime > Date.now()) && (
-                      <motion.div 
-                        initial={{ scale: 0, y: -20 }}
-                        animate={{ scale: 1, y: 0 }}
-                        className="absolute -top-8 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-2 z-30"
-                      >
-                        <TrendingUp className="w-4 h-4" /> 2X POINTS ACTIVE
-                      </motion.div>
-                    )}
-
-                    <h2 className="text-2xl md:text-5xl font-bold mb-4 leading-tight">{currentQuestion.text}</h2>
-                  </div>
-                </div>
-                
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6 relative">
+                {/* Options Section */}
+                <div className="flex-1 overflow-y-auto px-6 pt-12 pb-32 flex flex-col gap-4 max-w-2xl mx-auto w-full relative">
                   {/* Fireball Effect Reworked */}
                   {activeEffects.some(e => e.type === 'FIREBALL' && e.endTime > Date.now()) && (
                     <div className="absolute inset-0 z-20 pointer-events-none overflow-hidden rounded-3xl">
-                      <div className="absolute inset-0 bg-gradient-to-t from-orange-600/40 via-transparent to-transparent mix-blend-overlay" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-orange-600/20 via-transparent to-transparent mix-blend-overlay" />
                       <AnimatePresence>
                         {[...Array(10)].map((_, i) => (
                           <motion.div
@@ -896,7 +1012,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                       <motion.div 
                         animate={{ opacity: [0.1, 0.3, 0.1] }}
                         transition={{ repeat: Infinity, duration: 0.5 }}
-                        className="absolute inset-0 bg-orange-500/10"
+                        className="absolute inset-0 bg-orange-500/5"
                       />
                     </div>
                   )}
@@ -937,20 +1053,6 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                     ? shuffledOptions 
                     : currentQuestion.options
                   ).map((opt: string, i: number) => {
-                    const colors = [
-                      'bg-rose-500 hover:bg-rose-400 shadow-[0_6px_0_rgb(159,18,57)]',
-                      'bg-blue-500 hover:bg-blue-400 shadow-[0_6px_0_rgb(30,58,138)]',
-                      'bg-amber-500 hover:bg-amber-400 shadow-[0_6px_0_rgb(146,64,14)]',
-                      'bg-emerald-500 hover:bg-emerald-400 shadow-[0_6px_0_rgb(6,78,59)]'
-                    ];
-                    const selectedColors = [
-                      'bg-rose-600 shadow-[0_0px_0_rgb(159,18,57)] translate-y-[6px]',
-                      'bg-blue-600 shadow-[0_0px_0_rgb(30,58,138)] translate-y-[6px]',
-                      'bg-amber-600 shadow-[0_0px_0_rgb(146,64,14)] translate-y-[6px]',
-                      'bg-emerald-600 shadow-[0_0px_0_rgb(6,78,59)] translate-y-[6px]'
-                    ];
-                    const labels = ['A', 'B', 'C', 'D'];
-                    
                     const isSelected = selectedAnswer === opt;
                     const isDisabled = !!selectedAnswer;
 
@@ -960,7 +1062,7 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                     const hiddenByScissors = scissorsUsed && isWrong && wrongOptions.indexOf(opt) < 2;
                     const hiddenByHammer = hammerUsed && isWrong && wrongOptions.indexOf(opt) === 0;
 
-                    if ((hiddenByScissors || hiddenByHammer) && !answerResult) return <div key={i} className="min-h-[120px]" />;
+                    if ((hiddenByScissors || hiddenByHammer) && !answerResult) return <div key={i} className="min-h-[60px]" />;
 
                     return (
                       <button
@@ -968,27 +1070,26 @@ export function PlayerView({ onBack }: PlayerViewProps) {
                         onClick={() => submitAnswer(opt)}
                         disabled={isDisabled}
                         className={clsx(
-                          "relative p-5 md:p-8 rounded-2xl md:rounded-3xl text-lg md:text-2xl font-bold transition-all flex items-center gap-4 md:gap-6 min-h-[100px] md:min-h-[160px] group",
-                          isSelected ? selectedColors[i % 4] : colors[i % 4],
-                          isDisabled && !isSelected ? "opacity-40 grayscale-[0.5]" : "",
-                          !isDisabled && "active:translate-y-[6px] active:shadow-none"
+                          "relative p-4 md:p-5 rounded-full text-base md:text-lg font-medium transition-all flex items-center justify-center text-center shadow-sm border-2",
+                          isSelected 
+                            ? "bg-white border-blue-500 text-blue-600 shadow-[0_4px_10px_rgba(59,130,246,0.2)]" 
+                            : "bg-white border-transparent text-slate-700 hover:border-blue-200 shadow-[0_2px_8px_rgba(0,0,0,0.05)]",
+                          isDisabled && !isSelected ? "opacity-50 grayscale-[0.5]" : "",
+                          !isDisabled && "active:scale-95"
                         )}
                       >
-                        <div className="w-10 h-10 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-white/20 flex items-center justify-center text-xl md:text-3xl flex-shrink-0">
-                          {labels[i]}
-                        </div>
-                        <span className="text-left leading-tight drop-shadow-md">{opt}</span>
+                        {opt}
                       </button>
                     );
                   })}
+                  
+                  {selectedAnswer && (
+                    <div className="mt-8 text-center text-sm font-medium text-slate-400 flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Waiting for others...
+                    </div>
+                  )}
                 </div>
-                
-                {selectedAnswer && (
-                  <div className="mt-12 text-center text-xl font-medium text-zinc-400 flex items-center justify-center gap-3">
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    Waiting for others...
-                  </div>
-                )}
               </div>
             )}
 

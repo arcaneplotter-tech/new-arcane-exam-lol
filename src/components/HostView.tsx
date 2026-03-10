@@ -103,6 +103,11 @@ export function HostView({ onBack }: HostViewProps) {
       console.error('PeerJS error:', err);
     });
 
+    newPeer.on('disconnected', () => {
+      console.log('Peer disconnected, attempting to reconnect...');
+      newPeer.reconnect();
+    });
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       newPeer.destroy();
@@ -180,9 +185,25 @@ export function HostView({ onBack }: HostViewProps) {
       setTimeout(() => {
         broadcast({
           type: 'PLAYER_LIST',
-          players: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score }))
+          players: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, isReady: p.isReady }))
         });
       }, 500);
+    }
+
+    if (data.type === 'PLAYER_READY') {
+      setPlayers(prev => prev.map(p => {
+        if (p.id === conn.peer) {
+          return { ...p, isReady: data.ready };
+        }
+        return p;
+      }));
+      
+      setTimeout(() => {
+        broadcast({
+          type: 'PLAYER_LIST',
+          players: playersRef.current.map(p => ({ id: p.id, name: p.name, score: p.score, isReady: p.isReady }))
+        });
+      }, 100);
     }
 
     if (data.type === 'SUBMIT_ANSWER') {
@@ -756,6 +777,23 @@ export function HostView({ onBack }: HostViewProps) {
     }
   };
 
+  // Auto-advance if all players answered in NORMAL mode
+  useEffect(() => {
+    if (settings.examType === 'NORMAL' && players.length > 0 && players.every(p => p.hasAnswered)) {
+      if (gameState === 'QUESTION' && showAnswer) {
+        const timer = setTimeout(() => {
+          nextPhase();
+        }, 4000);
+        return () => clearTimeout(timer);
+      } else if (gameState === 'LEADERBOARD' && currentQuestionIndex + 1 < questions.length) {
+        const timer = setTimeout(() => {
+          nextPhase();
+        }, 4000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [gameState, showAnswer, players, settings.examType, currentQuestionIndex, questions.length]);
+
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
     setCopied(true);
@@ -1247,11 +1285,11 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
 
               <button
                 onClick={startGame}
-                disabled={questions.length === 0 || players.length === 0}
+                disabled={questions.length === 0 || players.length === 0 || !players.every(p => p.id === 'host' || p.isReady)}
                 className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all"
               >
                 <Play className="w-6 h-6" />
-                Start Game
+                {players.length > 0 && !players.every(p => p.id === 'host' || p.isReady) ? 'Waiting for players to be ready...' : 'Start Game'}
               </button>
             </div>
 
@@ -1278,15 +1316,16 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                           initial={{ opacity: 0, scale: 0.9 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.9 }}
-                          className="bg-zinc-800/50 border border-white/5 rounded-lg p-3 flex items-center gap-3"
+                          className="bg-zinc-800/50 border border-white/5 rounded-lg p-3 flex items-center gap-3 relative overflow-hidden"
                         >
-                          <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-bold">
+                          <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-300 font-bold z-10">
                             {p.name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 z-10">
                             <div className="flex items-center gap-2">
                               <span className="font-medium truncate">{p.name}</span>
                               {p.id === 'host' && <span className="text-[8px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider">Host</span>}
+                              {p.id !== 'host' && p.isReady && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
                             </div>
                             {/* Active Effects */}
                             <div className="flex flex-wrap gap-1 mt-1">
@@ -1315,6 +1354,9 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                               })}
                             </div>
                           </div>
+                          {p.id !== 'host' && p.isReady && (
+                            <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
+                          )}
                         </motion.div>
                       ))}
                     </AnimatePresence>
@@ -1384,8 +1426,26 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
           <motion.div
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="text-center"
+            className="text-center relative"
           >
+            {settings.chaosMode && (
+              <div className="absolute -top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+                <motion.div 
+                  animate={{ scale: [1, 1.1, 1] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                  className="bg-orange-600/90 border border-orange-500/50 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.3em] flex items-center gap-2 shadow-[0_0_15px_rgba(234,88,12,0.3)] whitespace-nowrap"
+                >
+                  <Flame className="w-3 h-3" /> Chaos Mode Active <Flame className="w-3 h-3" />
+                </motion.div>
+                <button 
+                  onClick={() => setShowInfoModal(true)}
+                  className="bg-zinc-800/80 backdrop-blur-md border border-white/10 text-zinc-400 hover:text-white p-1.5 rounded-full transition-colors shadow-lg"
+                  title="Game Info"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             <h2 className="text-6xl font-bold mb-4">Get Ready!</h2>
             <p className="text-2xl text-zinc-400">Look at the screen</p>
           </motion.div>
@@ -1948,7 +2008,7 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                   onClick={nextPhase}
                   className="bg-white text-black px-8 py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors"
                 >
-                  Next
+                  {settings.examType === 'NORMAL' && players.length > 0 && players.every(p => p.hasAnswered) ? 'Next (Auto)' : 'Next'}
                 </button>
               )}
             </div>
@@ -2232,7 +2292,7 @@ Please generate [NUMBER_OF_QUESTIONS] questions about [TOPIC].`;
                 onClick={nextPhase}
                 className="bg-white text-black px-12 py-4 rounded-xl font-bold text-lg hover:bg-zinc-200 transition-colors"
               >
-                {settings.examType === 'QUICK' ? 'Finish Game' : (currentQuestionIndex + 1 < questions.length ? 'Next Question' : 'Finish Game')}
+                {settings.examType === 'QUICK' ? 'Finish Game' : (currentQuestionIndex + 1 < questions.length ? (settings.examType === 'NORMAL' && players.length > 0 && players.every(p => p.hasAnswered) ? 'Next Question (Auto)' : 'Next Question') : 'Finish Game')}
               </button>
             </div>
           </div>
